@@ -22,7 +22,8 @@ not available on GCC 13 — use `<format>` + streams.
 - `apps/` → executables (`belter`).
 - `data/` → TOML definitions (bodies, stations, commodities, ship classes).
 - Tests live next to the code they test (`core/tests`, `expanse/tests`), doctest, registered via
-  `sim_add_test()`.
+  `sim_add_test()`. Test-case names must not contain `,` `[` `]` `*` or `\` — they break
+  `doctest_discover_tests` (CTest filter syntax).
 
 ## Simulation rules
 
