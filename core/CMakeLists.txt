@@ -1,0 +1,12 @@
+add_library(simcore
+  src/time.cpp
+)
+add_library(sim::core ALIAS simcore)
+target_include_directories(simcore PUBLIC include)
+sim_configure_target(simcore)
+
+sim_add_test(simcore_tests
+  SOURCES
+    tests/main.cpp
+    tests/time_tests.cpp
+  LIBS sim::core)
