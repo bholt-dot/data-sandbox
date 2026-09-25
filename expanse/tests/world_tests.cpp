@@ -3,6 +3,7 @@
 #include "expanse/calendar.hpp"
 #include "expanse/content.hpp"
 #include "expanse/scenario.hpp"
+#include "expanse/simulation.hpp"
 #include "expanse/units.hpp"
 #include "expanse/world.hpp"
 
@@ -177,4 +178,30 @@ TEST_CASE("docked ship position follows its station") {
     const auto station = std::get<Docked>(ship.location).station;
     const Vec3 p = ship_position(c, w, ship);
     CHECK(distance(p, c.orbits().world_position(c.orbit_of(station), w.now())) == doctest::Approx(0.0));
+}
+
+TEST_CASE("advance runs a year of ticks and stops on player events") {
+    const Content& c = game_content();
+    World w = new_game(c, "secondhand", 3);
+    const sim::Time start = w.now();
+    // The first loan payment is a player event: an interruptible advance stops there.
+    const AdvanceReport r = advance_to(c, w, start + sim::days(30), true);
+    CHECK(r.stopped_early);
+    CHECK(w.now() == start + sim::days(7));
+    // An uninterruptible advance runs through.
+    const AdvanceReport r2 = advance_to(c, w, start + sim::days(365), false);
+    CHECK_FALSE(r2.stopped_early);
+    CHECK(w.now() == start + sim::days(365));
+    CHECK(r2.occurrences >= 358); // daily ticks alone
+}
+
+TEST_CASE("advancing is reproducible") {
+    const Content& c = game_content();
+    World a = new_game(c, "secondhand", 11);
+    World b = new_game(c, "secondhand", 11);
+    advance_to(c, a, a.now() + sim::days(200), false);
+    advance_to(c, b, b.now() + sim::days(50), false);
+    World b2 = load_world(save_world(b), c);
+    advance_to(c, b2, b2.now() + sim::days(150), false);
+    CHECK(world_hash(a) == world_hash(b2));
 }

@@ -6,6 +6,11 @@ add_library(expanse
   src/content.cpp
   src/world.cpp
   src/scenario.cpp
+  src/simulation.cpp
+  src/economy.cpp
+  src/finance.cpp
+  src/crew.cpp
+  src/ships.cpp
 )
 add_library(sim::expanse ALIAS expanse)
 target_include_directories(expanse PUBLIC include)

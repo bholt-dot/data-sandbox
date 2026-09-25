@@ -145,6 +145,19 @@ struct StationState {
     static constexpr auto fields(auto& self) { return std::tie(self.stock); }
 };
 
+// ---- Player-facing messages -------------------------------------------------------------------
+
+enum class MessageKind : std::uint8_t { info, ship, market, crew, finance, warning };
+
+struct Message {
+    sim::Time time;
+    MessageKind kind = MessageKind::info;
+    bool urgent = false; // stops `advance until event`
+    std::string text;
+
+    static constexpr auto fields(auto& self) { return std::tie(self.time, self.kind, self.urgent, self.text); }
+};
+
 // ---- Scheduled events -------------------------------------------------------------------------
 // Events are plain data; the game's dispatch switches on the alternative.
 
@@ -182,6 +195,7 @@ struct World {
     sim::Table<LoanTag, Loan> loans;
     std::vector<StationState> stations; // by station index
     sim::StatPipeline stats;
+    std::vector<Message> messages; // append-only journal; the shell shows what's new
 
     CompanyId player;
 
@@ -194,7 +208,7 @@ struct World {
     static constexpr auto fields(auto& self) {
         return std::tie(self.content_fingerprint, self.seed, self.scheduler, self.rngs,
                         self.companies, self.ships, self.crew, self.loans, self.stations,
-                        self.stats, self.player);
+                        self.stats, self.messages, self.player);
     }
 };
 
