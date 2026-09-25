@@ -1,6 +1,8 @@
 #include "expanse/shell.hpp"
 
 #include "expanse/calendar.hpp"
+#include "expanse/crew.hpp"
+#include "expanse/economy.hpp"
 #include "expanse/finance.hpp"
 #include "expanse/scenario.hpp"
 #include "expanse/ships.hpp"
@@ -163,6 +165,44 @@ const std::vector<sim::ArgSpec> course_options = {
      .help = "cheapest course arriving within this time"},
 };
 
+CommodityId commodity_arg(const Session& s, const Invocation& inv) {
+    const auto& key = inv.get<std::string>("commodity");
+    const CommodityId id = s.content->find<CommodityDef>(key);
+    if (!id) {
+        throw CommandError(std::format("no commodity '{}'", key));
+    }
+    return id;
+}
+
+StationId docked_station(const World& w) {
+    const auto* d = std::get_if<Docked>(&w.ships.at(player_ship(w)).location);
+    if (d == nullptr) {
+        throw CommandError("you're not docked");
+    }
+    return d->station;
+}
+
+// Crew are addressed by their table slot ("#12"), shown by the `crew` command.
+CrewId crew_arg(const World& w, const Invocation& inv) {
+    const auto slot = inv.get<std::int64_t>("id");
+    for (auto [id, member] : w.crew) {
+        (void)member;
+        if (static_cast<std::int64_t>(id.index) == slot) {
+            return id;
+        }
+    }
+    throw CommandError(std::format("nobody with id #{} (see 'crew')", slot));
+}
+
+void print_trade(Session& s, const economy::TradeResult& r, std::ostream& out) {
+    if (!r.ok()) {
+        throw CommandError(r.reason);
+    }
+    s.messages_seen = s.world->messages.size(); // the reason repeats the journal line
+    out << r.reason << "\n";
+    out << std::format("cash now {}\n", format_credits(s.world->companies.at(s.world->player).cash));
+}
+
 } // namespace
 
 void register_game_commands(ShellBus& bus, std::shared_ptr<const Content> content) {
@@ -316,7 +356,9 @@ void register_game_commands(ShellBus& bus, std::shared_ptr<const Content> conten
                                    100.0 * ship.hull_condition);
                 out << std::format("            cargo {:.0f}/{:.0f} t", cargo_mass_t(ship), cls.cargo_capacity_t);
                 for (const CargoLot& lot : ship.cargo) {
-                    out << std::format(", {:.0f} t {}", lot.tonnes, c.table<CommodityDef>()[lot.commodity].name);
+                    const std::string& what = c.table<CommodityDef>()[lot.commodity].name;
+                    out << (lot.tonnes < 10.0 ? std::format(", {:.2f} t {}", lot.tonnes, what)
+                                              : std::format(", {:.0f} t {}", lot.tonnes, what));
                 }
                 out << "\n";
                 std::size_t aboard = 0;
@@ -505,6 +547,133 @@ void register_game_commands(ShellBus& bus, std::shared_ptr<const Content> conten
                        flush_messages(s, out);
                        out << std::format("paid {}; still owed here: {}\n", format_credits(paid),
                                           format_credits(dock_tab(w, w.player, docked->station)));
+                   });
+    // --- trade ---
+
+    bus.add_query({.name = "market",
+                   .summary = "Prices at your dock (or another station, as last known)",
+                   .positionals = {{.name = "station", .help = "station key", .required = false,
+                                    .completer = keys_of<StationDef>(content)}}},
+                  [](const Session& s, const Invocation& inv, std::ostream& out) {
+                      const World& w = require_world(s);
+                      const StationId st = inv.has("station") ? station_arg(s, inv) : docked_station(w);
+                      const StationDef& def = s.content->table<StationDef>()[st];
+                      out << std::format("{} market                 stock      normal     buy at    sell at\n", def.name);
+                      for (const MarketEntryDef& m : def.market) {
+                          const auto q = economy::quote(*s.content, w, st, m.commodity);
+                          out << std::format("  {:<12} {:<14} {:>8.0f} t {:>8.0f} t {:>7.0f} cr {:>7.0f} cr{}\n",
+                                             s.content->table<CommodityDef>().key(m.commodity),
+                                             s.content->table<CommodityDef>()[m.commodity].name, q->stock,
+                                             q->target, q->ask, q->bid,
+                                             q->disrupted_days ? "  (supply disrupted)" : "");
+                      }
+                  });
+
+    const sim::ArgSpec commodity_spec{.name = "commodity", .help = "commodity key",
+                                      .completer = keys_of<CommodityDef>(content)};
+
+    bus.add_action({.name = "buy",
+                    .summary = "Buy cargo at your dock",
+                    .positionals = {commodity_spec,
+                                    {.name = "tonnes", .type = sim::ArgType::number, .help = "amount"}}},
+                   [](Session& s, const Invocation& inv, std::ostream& out) {
+                       World& w = require_playing(s);
+                       print_trade(s, economy::buy(*s.content, w, player_ship(w), commodity_arg(s, inv),
+                                                   inv.get<double>("tonnes")), out);
+                   });
+
+    bus.add_action({.name = "sell",
+                    .summary = "Sell cargo at your dock",
+                    .positionals = {commodity_spec,
+                                    {.name = "tonnes", .type = sim::ArgType::number,
+                                     .help = "amount (default: all aboard)", .required = false}}},
+                   [](Session& s, const Invocation& inv, std::ostream& out) {
+                       World& w = require_playing(s);
+                       const ShipId ship = player_ship(w);
+                       const CommodityId k = commodity_arg(s, inv);
+                       double tonnes = 0.0;
+                       if (inv.has("tonnes")) {
+                           tonnes = inv.get<double>("tonnes");
+                       } else {
+                           for (const CargoLot& lot : w.ships.at(ship).cargo) {
+                               tonnes += lot.commodity == k ? lot.tonnes : 0.0;
+                           }
+                       }
+                       const economy::TradeResult r = economy::sell(*s.content, w, ship, k, tonnes);
+                       print_trade(s, r, out);
+                       if (r.ok()) {
+                           out << std::format("profit on cost {}\n", format_credits(r.profit));
+                       }
+                   });
+
+    bus.add_action({.name = "refuel",
+                    .summary = "Buy water as reaction mass (default: fill what you can afford)",
+                    .positionals = {{.name = "tonnes", .type = sim::ArgType::number, .help = "amount",
+                                     .required = false}}},
+                   [](Session& s, const Invocation& inv, std::ostream& out) {
+                       World& w = require_playing(s);
+                       const std::optional<double> t =
+                           inv.has("tonnes") ? std::optional{inv.get<double>("tonnes")} : std::nullopt;
+                       print_trade(s, economy::refuel(*s.content, w, player_ship(w), t), out);
+                   });
+
+    // --- crew ---
+
+    bus.add_query({.name = "crew", .summary = "Who's aboard, supplies, and who's looking for work here"},
+                  [](const Session& s, const Invocation&, std::ostream& out) {
+                      const World& w = require_world(s);
+                      const Content& c = *s.content;
+                      const ShipId ship = player_ship(w);
+                      auto row = [&](CrewId id) {
+                          const CrewMember& m = w.crew.at(id);
+                          out << std::format("  #{:<4} {:<24} {:<9} skill {:>3}  {:>6}/wk  morale {:>3.0f}%  {}\n",
+                                             id.index, m.name, crew::role_name(m.role), m.skill,
+                                             format_credits(m.wage_per_week), 100.0 * m.morale, m.background);
+                      };
+                      out << "Aboard:\n";
+                      for (const CrewId id : crew::aboard(w, ship)) {
+                          row(id);
+                      }
+                      const Ship& sh = w.ships.at(ship);
+                      const crew::Provisions have = crew::stores(c, sh);
+                      out << std::format("  payroll {}/week; stores: water {:.2f} t, food {:.2f} t, oxygen {:.2f} t\n",
+                                         format_credits(crew::weekly_payroll(w, ship)), have.water_t,
+                                         have.food_t, have.oxygen_t);
+                      if (const auto* d = std::get_if<Docked>(&sh.location)) {
+                          out << std::format("Looking for work at {}:\n", c.table<StationDef>()[d->station].name);
+                          for (const CrewId id : crew::pool_at(w, d->station)) {
+                              row(id);
+                          }
+                      }
+                  });
+
+    bus.add_action({.name = "hire",
+                    .summary = "Sign on someone from the dock (pays a week's wage up front)",
+                    .positionals = {{.name = "id", .type = sim::ArgType::integer, .help = "#id from 'crew'"}}},
+                   [](Session& s, const Invocation& inv, std::ostream& out) {
+                       World& w = require_playing(s);
+                       const CrewId id = crew_arg(w, inv);
+                       const crew::HireResult r = crew::hire(*s.content, w, player_ship(w), id);
+                       if (r.status != crew::HireStatus::ok) {
+                           throw CommandError(r.reason);
+                       }
+                       flush_messages(s, out);
+                       out << std::format("{} signs on.\n", w.crew.at(id).name);
+                   });
+
+    bus.add_action({.name = "fire",
+                    .summary = "Put a crew member ashore at this dock",
+                    .positionals = {{.name = "id", .type = sim::ArgType::integer, .help = "#id from 'crew'"}}},
+                   [](Session& s, const Invocation& inv, std::ostream& out) {
+                       World& w = require_playing(s);
+                       const CrewId id = crew_arg(w, inv);
+                       const std::string name = w.crew.at(id).name;
+                       const crew::FireResult r = crew::fire(w, id);
+                       if (r.status != crew::FireStatus::ok) {
+                           throw CommandError(r.reason);
+                       }
+                       flush_messages(s, out);
+                       out << std::format("{} goes ashore.\n", name);
                    });
 }
 

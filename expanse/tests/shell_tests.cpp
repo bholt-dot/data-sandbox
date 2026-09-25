@@ -80,3 +80,16 @@ TEST_CASE("shell session replays to the same hash") {
     }
     CHECK(world_hash(*a.session.world) == world_hash(*b.session.world));
 }
+
+TEST_CASE("shell trade and crew commands") {
+    Shell sh;
+    sh.run("new secondhand --seed 5");
+    CHECK(contains(sh.run("market"), "Water ice"));
+    CHECK(contains(sh.run("crew"), "Looking for work"));
+    CHECK(contains(sh.run("buy water 5"), "bought 5.0 t"));
+    CHECK(contains(sh.run("sell water"), "sold 5.0 t"));
+    CHECK(contains(sh.run("buy unobtainium 5"), "no commodity"));
+    CHECK(contains(sh.run("refuel 1"), "reaction mass"));
+    CHECK(contains(sh.run("hire 999999"), "nobody with id"));
+    CHECK(contains(sh.run("books"), "trade"));
+}
