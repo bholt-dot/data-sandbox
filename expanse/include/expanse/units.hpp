@@ -22,7 +22,14 @@ inline constexpr double mu_sun = 1.32712440018e20;
 // Geocentric gravitational constant (IERS/IAU), m^3/s^2.
 inline constexpr double mu_earth = 3.986004418e14;
 
+// Standard gravity (CGPM 1901): exact. Crews think in g, so drive accelerations are quoted in it.
+inline constexpr double g0 = 9.80665;
+inline constexpr double tonne_kg = 1000.0;
+
 constexpr double au(double v) { return v * au_m; }
+constexpr double gees(double v) { return v * g0; }
+constexpr double tonnes(double v) { return v * tonne_kg; }
+constexpr double km_per_s(double v) { return v * km_m; }
 constexpr double km(double v) { return v * km_m; }
 constexpr double days(double v) { return v * day_s; }
 constexpr double deg(double v) { return v * (pi / 180.0); }
