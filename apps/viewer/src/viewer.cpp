@@ -1,6 +1,7 @@
 #include "viewer/viewer.hpp"
 
 #include "expanse/calendar.hpp"
+#include "module_pins.hpp"
 #include "renderer.hpp"
 #include "scene.hpp"
 
@@ -193,6 +194,7 @@ bool handle_event(const SDL_Event& e, Camera& camera, Input& input) {
 int run(ViewerLink& link, const ViewerOptions& options) {
     SDL_SetMainReady(); // we provide main() ourselves (no SDL_main.h)
     SDL_SetAppMetadata("belter viewer", nullptr, "net.data-sandbox.belter");
+    ModulePins pins; // sanitizer builds: keep the GPU driver mapped until exit (module_pins.hpp)
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         return fail("SDL_Init");
     }
@@ -213,6 +215,7 @@ int run(ViewerLink& link, const ViewerOptions& options) {
         return fail("SDL_ClaimWindowForGPUDevice");
     }
     platform.claimed = true;
+    pins.pin_new();
     // VSYNC is the default and always supported; set it explicitly as the frame pacing contract.
     if (!SDL_SetGPUSwapchainParameters(device, platform.window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR,
                                        SDL_GPU_PRESENTMODE_VSYNC)) {
@@ -302,6 +305,9 @@ int run(ViewerLink& link, const ViewerOptions& options) {
             std::cerr << std::format("belter viewer: wrote {} ({}x{})\n", options.screenshot.string(), w, h);
         } else if (!SDL_SubmitGPUCommandBuffer(cmd)) {
             return fail("SDL_SubmitGPUCommandBuffer");
+        }
+        if (frame_no == 1) {
+            pins.pin_new(); // drivers may load their shader compiler lazily, at the first pipeline
         }
         if (last) {
             break;

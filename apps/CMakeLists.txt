@@ -34,7 +34,7 @@ if(SIM_VIEWER)
              COMMAND belter --script ${CMAKE_CURRENT_SOURCE_DIR}/tests/view_session.txt --view
                      --screenshot ${belter_view_png})
     set_tests_properties(belter_view_script_screenshot PROPERTIES
-      ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;ASAN_OPTIONS=detect_leaks=0"
+      ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen"
       FIXTURES_SETUP belter_view_png)
     add_test(NAME belter_view_script_screenshot_check COMMAND check_screenshot ${belter_view_png} 1280 720)
     set_tests_properties(belter_view_script_screenshot_check PROPERTIES FIXTURES_REQUIRED belter_view_png)

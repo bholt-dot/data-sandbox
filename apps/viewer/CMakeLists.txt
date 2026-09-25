@@ -14,11 +14,12 @@ sim_configure_target(belter_viewer_core)
 
 add_library(belter_viewer STATIC
   src/gpu.cpp
+  src/module_pins.cpp
   src/renderer.cpp
   src/viewer.cpp
 )
 target_include_directories(belter_viewer PUBLIC include PRIVATE src)
-target_link_libraries(belter_viewer PUBLIC belter_viewer_core PRIVATE SDL3::SDL3)
+target_link_libraries(belter_viewer PUBLIC belter_viewer_core PRIVATE SDL3::SDL3 ${CMAKE_DL_LIBS})
 sim_configure_target(belter_viewer)
 sim_add_spirv_shaders(belter_viewer NAMESPACE viewer SHADERS
   shaders/sprite.vert
@@ -47,17 +48,15 @@ if(SIM_BUILD_TESTS)
   # default view, then image checks. `offscreen` is SDL's windowless video driver; its Vulkan
   # surface is VK_EXT_headless_surface, so no display server is needed. With xvfb-run available
   # the same run goes through a real X11 window and swapchain as well.
-  # Leak checking is off for these runs only: Vulkan drivers (lavapipe's LLVM) and libX11 keep
-  # process-lifetime allocations that LSan reports after they are unloaded. Our own code is
-  # leak-checked by viewer_tests.
-  set(gpu_env "ASAN_OPTIONS=detect_leaks=0")
+  # Leak checking stays on: GPU driver libraries are pinned in sanitizer builds (module_pins.hpp)
+  # so their process-lifetime allocations aren't misreported after the loader unloads them.
   set(shot_size 640x360)
   set(shot_args --size ${shot_size} --frames 3)
   set(offscreen_png "${CMAKE_CURRENT_BINARY_DIR}/screenshot_offscreen.png")
   add_test(NAME viewer_screenshot_offscreen
            COMMAND belter-view ${shot_args} --screenshot ${offscreen_png})
   set_tests_properties(viewer_screenshot_offscreen PROPERTIES
-    ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;${gpu_env}"
+    ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen"
     FIXTURES_SETUP viewer_offscreen_png)
   add_test(NAME viewer_screenshot_offscreen_check
            COMMAND check_screenshot ${offscreen_png} 640 360)
@@ -65,7 +64,7 @@ if(SIM_BUILD_TESTS)
 
   # The shell's pattern: a second thread advances the game and publishes while the window renders.
   add_test(NAME viewer_animate_offscreen COMMAND belter-view --size 320x180 --animate 200 --frames 40)
-  set_tests_properties(viewer_animate_offscreen PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;${gpu_env}")
+  set_tests_properties(viewer_animate_offscreen PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen")
 
   find_program(XVFB_RUN xvfb-run)
   if(XVFB_RUN)
@@ -74,7 +73,7 @@ if(SIM_BUILD_TESTS)
              COMMAND ${XVFB_RUN} -a -s "-screen 0 1024x768x24"
                      $<TARGET_FILE:belter-view> ${shot_args} --screenshot ${x11_png})
     set_tests_properties(viewer_screenshot_x11 PROPERTIES
-      ENVIRONMENT "SDL_VIDEO_DRIVER=x11;${gpu_env}"
+      ENVIRONMENT "SDL_VIDEO_DRIVER=x11"
       FIXTURES_SETUP viewer_x11_png)
     add_test(NAME viewer_screenshot_x11_check COMMAND check_screenshot ${x11_png} 640 360)
     set_tests_properties(viewer_screenshot_x11_check PROPERTIES FIXTURES_REQUIRED viewer_x11_png)
