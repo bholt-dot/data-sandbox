@@ -1,5 +1,7 @@
 #pragma once
 
+#include "simcore/text.hpp"
+
 // Parser-agnostic view of parsed data files, plus diagnostics with source locations.
 //
 // DataNode wraps a node of a parsed TOML document without exposing toml++ in public headers:
@@ -106,9 +108,6 @@ private:
 
 const char* kind_name(DataNode::Kind kind);
 
-// Optimal-string-alignment edit distance (Levenshtein + adjacent transpositions, which covers
-// the most common typing mistakes).
-std::size_t edit_distance(std::string_view a, std::string_view b);
 
 // The candidate closest to `word` (ignoring ASCII case), if it is close enough to plausibly be a typo
 // (distance <= max(1, word.size() / 3)). Ties go to the earliest candidate, so results are
