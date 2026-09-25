@@ -1,0 +1,152 @@
+# Natural satellites. Elements are relative to the parent planet, epoch J2000, but expressed in
+# the same J2000 ecliptic axes as the heliocentric orbits (the game uses one set of axes at every
+# level), so a moon's i/node place it in its planet's (tilted) equatorial plane: ~2 deg for
+# Jupiter, ~26 deg for Mars, ~28 deg for Saturn, ~98 deg for Uranus.
+#
+# How the elements were made (derivation described in bean repo-pl7w):
+#   * a: published mean semi-major axes (JPL SSD "Planetary Satellite Mean Elements"; Enceladus,
+#     Rhea, Titan from the IAU/Wikipedia infobox values). Kepler periods with the parent GM from
+#     bodies.toml match the known sidereal periods to <0.1% (Luna: 0.5%, see below).
+#   * i, node, peri, M, e: an analytic theory sampled over one orbit starting at J2000 and fitted
+#     with a plane + first-order ellipse; M is chosen so the J2000 direction is reproduced.
+#       Galilean moons: astronomy-engine 2.1.19 (Lieske E5 series), geometric J2000 vectors.
+#       Mars moons, Saturn and Uranus moons: PyEphem 4.2.1 / libastro (TASS 1.7 for Saturn,
+#       GUST86 for Uranus), corrected for light time. PyEphem and astronomy-engine agree on the
+#       Galilean moons to 0.2 deg in mean longitude.
+#     Fitted e agrees with JPL's mean e to ~0.001.
+# Approximations: fixed ellipses with no nodal/apsidal precession (inner moons' nodes regress
+# around their planet's equator in years to centuries, so by 2350 the phase and node are
+# effectively fictional -- the orbit size, plane and period are what matter); Luna uses Earth-only
+# GM, making its period 0.5% long; Phoebe is an osculating (not mean) orbit.
+#
+# GM: JPL SSD satellite physical parameters (Luna: DE440; Mars: MAR097; Jupiter: JUP310;
+# Saturn: SAT441). Uranian moon GM from published masses (approximate, +-3%). Radii: mean radii
+# from the same tables.
+
+# ---- Earth ------------------------------------------------------------------------------------
+
+# Luna: JPL mean ecliptic elements at J2000. Within 0.6 deg of the true J2000 position.
+[body.luna]
+name = "Luna"
+kind = "moon"
+parent = "earth"
+gm_km3_s2 = 4902.8
+radius_km = 1737
+orbit = { a_km = 384400, e = 0.0549, i_deg = 5.145, node_deg = 125.08, peri_deg = 318.15, mean_anomaly_deg = 135.27 }
+
+# ---- Mars -------------------------------------------------------------------------------------
+
+[body.phobos]
+name = "Phobos"
+kind = "moon"
+parent = "mars"
+gm_km3_s2 = 0.0007087
+radius_km = 11.08
+orbit = { a_km = 9376, e = 0.0162, i_deg = 26.00, node_deg = 84.69, peri_deg = 340.17, mean_anomaly_deg = 192.63 }
+
+[body.deimos]
+name = "Deimos"
+kind = "moon"
+parent = "mars"
+gm_km3_s2 = 0.0000962
+radius_km = 6.2
+orbit = { a_km = 23458, e = 0.0002, i_deg = 27.55, node_deg = 83.72, peri_deg = 208.88, mean_anomaly_deg = 7.95 }
+
+# ---- Jupiter (Galilean moons) -----------------------------------------------------------------
+
+[body.io]
+name = "Io"
+kind = "moon"
+parent = "jupiter"
+gm_km3_s2 = 5959.916
+radius_km = 1821.5
+orbit = { a_km = 421800, e = 0.0041, i_deg = 2.21, node_deg = 336.90, peri_deg = 69.44, mean_anomaly_deg = 331.97 }
+
+[body.europa]
+name = "Europa"
+kind = "moon"
+parent = "jupiter"
+gm_km3_s2 = 3202.739
+radius_km = 1560.8
+orbit = { a_km = 671100, e = 0.0096, i_deg = 1.79, node_deg = 332.65, peri_deg = 252.99, mean_anomaly_deg = 347.09 }
+
+[body.ganymede]
+name = "Ganymede"
+kind = "moon"
+parent = "jupiter"
+gm_km3_s2 = 9887.834
+radius_km = 2631.2
+orbit = { a_km = 1070400, e = 0.0015, i_deg = 2.21, node_deg = 343.21, peri_deg = 316.51, mean_anomaly_deg = 280.36 }
+
+[body.callisto]
+name = "Callisto"
+kind = "moon"
+parent = "jupiter"
+gm_km3_s2 = 7179.289
+radius_km = 2410.3
+orbit = { a_km = 1882700, e = 0.0074, i_deg = 2.02, node_deg = 338.14, peri_deg = 15.95, mean_anomaly_deg = 85.11 }
+
+# ---- Saturn -----------------------------------------------------------------------------------
+
+[body.enceladus]
+name = "Enceladus"
+kind = "moon"
+parent = "saturn"
+gm_km3_s2 = 7.2103
+radius_km = 252.1
+orbit = { a_km = 237948, e = 0.0049, i_deg = 28.09, node_deg = 169.40, peri_deg = 131.41, mean_anomaly_deg = 11.05 }
+
+[body.rhea]
+name = "Rhea"
+kind = "moon"
+parent = "saturn"
+gm_km3_s2 = 153.9426
+radius_km = 763.5
+orbit = { a_km = 527108, e = 0.0012, i_deg = 28.28, node_deg = 168.94, peri_deg = 169.74, mean_anomaly_deg = 203.00 }
+
+[body.titan]
+name = "Titan"
+kind = "moon"
+parent = "saturn"
+gm_km3_s2 = 8978.1382
+radius_km = 2574.7
+orbit = { a_km = 1221870, e = 0.0288, i_deg = 27.72, node_deg = 169.23, peri_deg = 163.78, mean_anomaly_deg = 164.15 }
+
+# Phoebe: irregular, retrograde. JPL Horizons osculating elements (epoch 2026-05-12, as shipped
+# in Stellarium's ssystem_major.ini; Saturn-equator frame -- the only reading that gives Phoebe's
+# known near-ecliptic retrograde orbit) rotated to ecliptic axes (IAU 2015 Saturn pole) and
+# propagated back to J2000 with their own mean motion. Solar perturbations make the J2000 phase
+# uncertain by tens of degrees; size, shape and the ~173 deg ecliptic inclination are right.
+[body.phoebe]
+name = "Phoebe"
+kind = "moon"
+parent = "saturn"
+gm_km3_s2 = 0.5532
+radius_km = 106.5
+orbit = { a_km = 12937594, e = 0.1771, i_deg = 172.83, node_deg = 271.02, peri_deg = 10.15, mean_anomaly_deg = 41.55 }
+
+# ---- Uranus -----------------------------------------------------------------------------------
+
+[body.miranda]
+name = "Miranda"
+kind = "moon"
+parent = "uranus"
+gm_km3_s2 = 4.3
+radius_km = 235.8
+orbit = { a_km = 129900, e = 0.0018, i_deg = 97.34, node_deg = 172.05, peri_deg = 149.19, mean_anomaly_deg = 174.37 }
+
+[body.titania]
+name = "Titania"
+kind = "moon"
+parent = "uranus"
+gm_km3_s2 = 226.9
+radius_km = 788.9
+orbit = { a_km = 436300, e = 0.0019, i_deg = 97.88, node_deg = 167.80, peri_deg = 221.91, mean_anomaly_deg = 54.73 }
+
+[body.oberon]
+name = "Oberon"
+kind = "moon"
+parent = "uranus"
+gm_km3_s2 = 205.3
+radius_km = 761.4
+orbit = { a_km = 583500, e = 0.0008, i_deg = 97.91, node_deg = 167.84, peri_deg = 191.24, mean_anomaly_deg = 156.36 }

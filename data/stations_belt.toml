@@ -1,0 +1,49 @@
+# Belt stations beyond the starter set in stations.toml. Belt economies export water ice and
+# ore, and import food and medical supplies.
+
+# Eros is a dry S-type rock: ore and metals out, water in.
+[station.eros_station]
+name = "Eros Station"
+body = "eros"
+faction = "belt"
+population = 1500000
+docking_fee = 120
+market = [
+  { commodity = "ore", production = 220, consumption = 20, stock = 9000 },
+  { commodity = "metals", production = 30, stock = 1200 },
+  { commodity = "parts", production = 6, consumption = 8, stock = 300 },
+  { commodity = "water", consumption = 90, stock = 2500 },
+  { commodity = "food", consumption = 70, stock = 1500 },
+  { commodity = "medical", consumption = 1.5, stock = 40 },
+]
+
+# Carbonaceous and icy: a water stop in the outer belt.
+[station.hygiea_outpost]
+name = "Hygiea Outpost"
+body = "hygiea"
+faction = "belt"
+population = 25000
+docking_fee = 60
+market = [
+  { commodity = "water", production = 180, consumption = 20, stock = 9000 },
+  { commodity = "ore", production = 60, stock = 3000 },
+  { commodity = "food", consumption = 10, stock = 200 },
+  { commodity = "medical", consumption = 0.3, stock = 8 },
+  { commodity = "parts", consumption = 2, stock = 40 },
+]
+
+# Metal-rich M-type: smelts its own ore.
+[station.psyche_foundry]
+name = "Psyche Foundry"
+body = "psyche"
+faction = "independent"
+population = 30000
+docking_fee = 110
+market = [
+  { commodity = "ore", production = 150, stock = 6000 },
+  { commodity = "metals", production = 90, stock = 3500 },
+  { commodity = "water", consumption = 30, stock = 900 },
+  { commodity = "oxygen", consumption = 10, stock = 400 },
+  { commodity = "food", consumption = 9, stock = 250 },
+  { commodity = "parts", consumption = 4, stock = 80 },
+]
