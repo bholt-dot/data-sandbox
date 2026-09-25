@@ -3,12 +3,15 @@
 #include "expanse/calendar.hpp"
 #include "module_pins.hpp"
 #include "nav.hpp"
+#include "overlay.hpp"
 #include "renderer.hpp"
 #include "scene.hpp"
+#include "text.hpp"
 
 #define SDL_MAIN_HANDLED // the host program owns main(); see SDL_SetMainReady below
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
+#include <SDL3_ttf/SDL_ttf.h>
 
 #include <algorithm>
 #include <cmath>
@@ -40,6 +43,7 @@ struct Platform {
     SDL_Window* window = nullptr;
     SDL_GPUDevice* device = nullptr;
     bool claimed = false;
+    bool ttf = false;
 
     Platform() = default;
     Platform(const Platform&) = delete;
@@ -54,6 +58,9 @@ struct Platform {
         }
         if (window != nullptr) {
             SDL_DestroyWindow(window);
+        }
+        if (ttf) {
+            TTF_Quit();
         }
         SDL_Quit();
     }
@@ -182,6 +189,10 @@ Key to_key(SDL_Keycode key) {
         return Key::escape;
     case SDLK_Q:
         return Key::q;
+    case SDLK_H:
+        return Key::h;
+    case SDLK_I:
+        return Key::i;
     default:
         return Key::other;
     }
@@ -249,6 +260,7 @@ void apply_initial_view(Navigator& nav, const Scene& scene, const ViewerOptions&
     cam.set_angles(options.yaw_deg ? expanse::units::deg(*options.yaw_deg) : defaults.yaw_rad,
                    options.pitch_deg ? expanse::units::deg(*options.pitch_deg) : defaults.pitch_rad);
     cam.update(60.0, scene); // settle any zoom easing
+    nav.set_show_info(options.show_info);
 }
 
 int run(ViewerLink& link, const ViewerOptions& options) {
@@ -291,6 +303,16 @@ int run(ViewerLink& link, const ViewerOptions& options) {
     if (!renderer) {
         return fail("creating pipelines");
     }
+    if (!TTF_Init()) {
+        return fail("TTF_Init");
+    }
+    platform.ttf = true;
+    std::unique_ptr<OverlayRenderer> text =
+        OverlayRenderer::create(device, Renderer::target_format, SDL_GetWindowDisplayScale(platform.window));
+    if (!text) {
+        return fail("creating the text overlay");
+    }
+    const MeasureText measure = [&text](std::string_view s, TextStyle style) { return text->measure(s, style); };
     if (options.print_controls) {
         std::cerr << std::format("belter viewer: {}\n", controls_help_text);
     }
@@ -299,8 +321,11 @@ int run(ViewerLink& link, const ViewerOptions& options) {
     std::optional<ObjectRef> hovered;
     bool initial_view_applied = false;
     std::shared_ptr<const ViewSnapshot> shown;
+    std::uint64_t shown_generation = 0;
     Scene scene;
     FrameData frame;
+    Overlay overlay;
+    OverlayDrawList overlay_list;
     Uint64 last_ns = SDL_GetTicksNS();
 
     for (int frame_no = 1;; ++frame_no) {
@@ -319,6 +344,7 @@ int run(ViewerLink& link, const ViewerOptions& options) {
         bool retitle = false;
         if (std::shared_ptr<const ViewSnapshot> latest = link.latest(); latest != shown) {
             shown = std::move(latest);
+            ++shown_generation;
             scene = shown ? build_scene(*shown) : Scene{};
             retitle = true;
             if (!initial_view_applied && !scene.objects.empty()) {
@@ -326,18 +352,11 @@ int run(ViewerLink& link, const ViewerOptions& options) {
                 initial_view_applied = true;
             }
         }
-        // Until the labels overlay exists, the title bar names what the cursor is over.
-        if (const std::optional<ObjectRef> now_hovered = nav.hovered(scene); now_hovered != hovered) {
-            hovered = now_hovered;
-            retitle = true;
-        }
+        hovered = nav.hovered(scene);
         if (retitle) {
             std::string title = options.title;
             if (shown) {
                 title += std::format(" - {}", expanse::calendar::format_datetime(shown->time));
-            }
-            if (const SceneObject* o = hovered ? scene.find(*hovered) : nullptr) {
-                title += std::format(" - {}", o->name);
             }
             SDL_SetWindowTitle(platform.window, title.c_str());
         }
@@ -346,6 +365,39 @@ int run(ViewerLink& link, const ViewerOptions& options) {
         const double dt = std::min(static_cast<double>(now_ns - last_ns) * 1e-9, 0.1); // no leaps after a stall
         last_ns = now_ns;
         nav.update(dt, scene);
+
+        // The overlay is laid out (and its glyphs rasterised, through SDL_ttf's own uploads)
+        // before this frame's command buffer exists, at the window's current pixel size.
+        int pixel_w = 0;
+        int pixel_h = 0;
+        SDL_GetWindowSizeInPixels(platform.window, &pixel_w, &pixel_h);
+        if (pixel_w > 0 && pixel_h > 0) {
+            if (!text->set_ui_scale(SDL_GetWindowDisplayScale(platform.window))) {
+                return fail("reopening fonts");
+            }
+            nav.set_viewport(static_cast<double>(pixel_w), static_cast<double>(pixel_h));
+            const OverlayInput overlay_input{.snapshot = shown.get(),
+                                             .snapshot_generation = shown_generation,
+                                             .scene = &scene,
+                                             .camera = nav.camera(),
+                                             .width = static_cast<float>(pixel_w),
+                                             .height = static_cast<float>(pixel_h),
+                                             .ui_scale = text->ui_scale(),
+                                             .focus = nav.orbit_camera().focus(),
+                                             .hovered = hovered,
+                                             .cursor_x = nav.cursor_x(),
+                                             .cursor_y = nav.cursor_y(),
+                                             .show_hints = nav.show_hints(),
+                                             .show_info = nav.show_info()};
+            overlay.build(overlay_input, measure, overlay_list);
+            text->prepare(overlay_list);
+            if (const auto& r = overlay.info_rect()) {
+                nav.set_ui_region(std::array{static_cast<double>(r->x), static_cast<double>(r->y),
+                                             static_cast<double>(r->w), static_cast<double>(r->h)});
+            } else {
+                nav.set_ui_region(std::nullopt);
+            }
+        }
 
         SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(device);
         if (cmd == nullptr) {
@@ -371,12 +423,13 @@ int run(ViewerLink& link, const ViewerOptions& options) {
         nav.set_viewport(static_cast<double>(w), static_cast<double>(h));
         prepare_frame(scene, nav.camera(), static_cast<float>(w), static_cast<float>(h), frame);
         SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(cmd);
-        const bool uploaded = renderer->upload(copy, frame);
+        const bool uploaded = renderer->upload(copy, frame) && text->upload(copy);
         SDL_EndGPUCopyPass(copy);
         if (!uploaded) {
             return submit_and_fail(cmd, "uploading frame data");
         }
         renderer->draw(cmd, target.texture.get(), target.depth.get(), frame);
+        text->draw(cmd, target.texture.get(), static_cast<float>(w), static_cast<float>(h));
 
         SDL_GPUBlitInfo blit{};
         blit.source.texture = target.texture.get();

@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <span>
+#include <utility>
 
 namespace viewer {
 
@@ -120,7 +121,9 @@ std::unique_ptr<Renderer> Renderer::create(SDL_GPUDevice* device, SDL_GPUTexture
         info.vertex_input_state.num_vertex_attributes = 1;
         info.primitive_type = SDL_GPU_PRIMITIVETYPE_LINESTRIP;
         r->line_pipeline_ = GpuPipeline{device, SDL_CreateGPUGraphicsPipeline(device, &info)};
-        if (!r->line_pipeline_) {
+        info.primitive_type = SDL_GPU_PRIMITIVETYPE_LINELIST;
+        r->dash_pipeline_ = GpuPipeline{device, SDL_CreateGPUGraphicsPipeline(device, &info)};
+        if (!r->line_pipeline_ || !r->dash_pipeline_) {
             return nullptr;
         }
     }
@@ -161,13 +164,19 @@ void Renderer::draw(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target, SDL_GPUTe
         SDL_DrawGPUPrimitives(pass, 6, static_cast<Uint32>(frame.spheres.size()), 0, 0);
     }
 
-    if (!frame.strips.empty() && lines_.get() != nullptr) {
-        SDL_BindGPUGraphicsPipeline(pass, line_pipeline_.get());
+    if (lines_.get() != nullptr) {
         const SDL_GPUBufferBinding binding{.buffer = lines_.get(), .offset = 0};
-        SDL_BindGPUVertexBuffers(pass, 0, &binding, 1);
-        for (const StripDraw& strip : frame.strips) {
-            SDL_PushGPUVertexUniformData(cmd, 1, &strip.uniforms, sizeof(strip.uniforms));
-            SDL_DrawGPUPrimitives(pass, strip.count, 1, strip.first, 0);
+        for (const auto& [pipeline, list] : {std::pair{line_pipeline_.get(), &frame.strips},
+                                             std::pair{dash_pipeline_.get(), &frame.dashes}}) {
+            if (list->empty()) {
+                continue;
+            }
+            SDL_BindGPUGraphicsPipeline(pass, pipeline);
+            SDL_BindGPUVertexBuffers(pass, 0, &binding, 1);
+            for (const StripDraw& strip : *list) {
+                SDL_PushGPUVertexUniformData(cmd, 1, &strip.uniforms, sizeof(strip.uniforms));
+                SDL_DrawGPUPrimitives(pass, strip.count, 1, strip.first, 0);
+            }
         }
     }
 

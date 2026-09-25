@@ -1,7 +1,11 @@
-// check_screenshot FILE WIDTH HEIGHT [system|sphere|cluster]: sanity checks on a belter-view
-// screenshot. Exits non-zero with a reason if the image is the wrong size, blank or one colour,
-// or misses what the view must show:
+// check_screenshot FILE WIDTH HEIGHT [MODE]: sanity checks on a belter-view screenshot. Exits
+// non-zero with a reason if the image is the wrong size, blank or one colour, or misses what the
+// view must show:
 //   system   the default view: a bright Sun at the centre
+//   labels   the default view with its overlay: the Sun, its label beside it, the date in the
+//            top-left corner and the hint line along the bottom
+//   info     an info panel: the top-right corner, empty sky in the other views, full of text
+//   plot     a plotted course: a long dashed amber line
 //   sphere   a planet close-up lit from the side: a bright lit half and a dark night half
 //            either side of the centre
 //   cluster  the Ceres cluster: the green ring of the player's ship at the centre and amber
@@ -33,12 +37,13 @@ int luma(const Rgb& c) { return (2 * c[0] + 5 * c[1] + c[2]) / 8; }
 
 bool is_player_green(const Rgb& c) { return c[1] > 170 && c[1] - c[0] > 60 && c[1] - c[2] > 40; }
 bool is_belt_amber(const Rgb& c) { return c[0] > 190 && c[1] > 110 && c[1] < 230 && c[0] - c[2] > 100; }
+bool is_text_light(const Rgb& c) { return luma(c) > 170; }
 
 } // namespace
 
 int main(int argc, char** argv) {
     if (argc != 4 && argc != 5) {
-        return fail("usage: check_screenshot FILE WIDTH HEIGHT [system|sphere|cluster]");
+        return fail("usage: check_screenshot FILE WIDTH HEIGHT [system|sphere|cluster|labels|info|plot]");
     }
     const int want_w = std::atoi(argv[2]);
     const int want_h = std::atoi(argv[3]);
@@ -79,6 +84,15 @@ int main(int argc, char** argv) {
             }
         }
         const int corner = luma(pixel(2, img->h - 3));
+        auto count = [&](int x0, int y0, int x1, int y1, auto pred) {
+            int n = 0;
+            for (int y = std::max(y0, 0); y < std::min(y1, img->h); ++y) {
+                for (int x = std::max(x0, 0); x < std::min(x1, img->w); ++x) {
+                    n += pred(pixel(x, y)) ? 1 : 0;
+                }
+            }
+            return n;
+        };
         std::cerr << std::format("check_screenshot: {} {}x{}, {} colours, centre luma {}, corner luma {}\n", mode,
                                  img->w, img->h, colours.size(), centre, corner);
         if (colours.size() < 16) {
@@ -88,6 +102,37 @@ int main(int argc, char** argv) {
         } else if (mode == "system") {
             if (centre < 200) {
                 status = fail("no bright Sun at the centre");
+            }
+        } else if (mode == "labels") {
+            const int date = count(0, 0, img->w / 4, img->h / 10, is_text_light);
+            const int sun_label = count(cx + 10, cy - 10, cx + 60, cy + 10, is_text_light);
+            const int hints = count(0, img->h - 30, img->w, img->h, [](const Rgb& c) { return luma(c) > 100; });
+            std::cerr << std::format("check_screenshot: date {} px, Sun label {} px, hints {} px\n", date, sun_label,
+                                     hints);
+            if (centre < 200) {
+                status = fail("no bright Sun at the centre");
+            } else if (date < 60) {
+                status = fail("no date in the top-left corner");
+            } else if (sun_label < 15) {
+                status = fail("no label beside the Sun");
+            } else if (hints < 100) {
+                status = fail("no hint line along the bottom");
+            }
+        } else if (mode == "info") {
+            const int x0 = img->w * 7 / 10;
+            const int y1 = img->h * 3 / 10;
+            const int text = count(x0, 14, img->w - 14, y1, is_text_light);
+            std::cerr << std::format("check_screenshot: {} px of text in the panel corner\n", text);
+            if (text < 600) {
+                status = fail("no info panel text in the top-right corner");
+            }
+        } else if (mode == "plot") {
+            const int amber = count(0, 0, img->w, img->h, [](const Rgb& c) {
+                return c[0] > 200 && c[1] > 140 && c[2] < 120 && c[0] - c[2] > 120;
+            });
+            std::cerr << std::format("check_screenshot: {} amber course pixels\n", amber);
+            if (amber < 150) {
+                status = fail("no plotted course");
             }
         } else if (mode == "sphere") {
             // The brightest point on the centre row is the sub-solar limb; halfway between it and

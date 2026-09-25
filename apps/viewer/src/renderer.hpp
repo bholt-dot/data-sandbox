@@ -18,6 +18,8 @@ class Renderer {
 public:
     // The scene target format. The HDR work (repo-zvv9) switches this to a float format and adds
     // a tonemapping pass; the swapchain format is independent because frames reach it by blit.
+    // The overlay (text.hpp) is a separate pass in display space: with HDR it belongs after the
+    // tonemap, on the LDR image, so labels keep their exact colours and are never bloomed.
     static constexpr SDL_GPUTextureFormat target_format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
 
     // The best depth format the device offers for reversed-Z: D32_FLOAT (Vulkan requires it or
@@ -39,6 +41,7 @@ private:
     GpuPipeline sphere_pipeline_;
     GpuPipeline sprite_pipeline_;
     GpuPipeline line_pipeline_;
+    GpuPipeline dash_pipeline_; // line lists: dashed provisional courses
     DynamicBuffer spheres_{SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ};
     DynamicBuffer sprites_{SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ};
     DynamicBuffer lines_{SDL_GPU_BUFFERUSAGE_VERTEX};

@@ -42,10 +42,12 @@ constexpr std::string_view usage = R"(usage: belter-view [options]
   --distance-au X     start X AU from the focus
   --yaw DEG           start at this camera yaw (around the ecliptic pole)
   --pitch DEG         start at this camera elevation above the ecliptic
+  --info              open with the info panel of the focus showing
 
 Controls: left-drag orbit, shift/right-drag pan, wheel or +/- zoom, F player ship, Home Sun,
 1-9 bookmarks (Earth Luna Mars Ceres Vesta Jupiter Ganymede Saturn Titan), Tab/Shift+Tab
-stations, [ ] ships, R reset, Esc or Q close.
+stations, [ ] ships, click focus + info panel, I info panel, H hotkey hints, R reset,
+Esc close the panel (then the window), Q close.
 Headless: SDL_VIDEO_DRIVER=offscreen belter-view --screenshot out.png
 )";
 
@@ -72,6 +74,10 @@ bool parse_args(std::span<char*> argv, Args& args) {
         auto value = [&]() -> std::string_view { return i + 1 < argv.size() ? argv[++i] : std::string_view{}; };
         if (a == "--gpu-debug") {
             args.view.gpu_debug = true;
+            continue;
+        }
+        if (a == "--info") {
+            args.view.show_info = true;
             continue;
         }
         const std::string_view v = value();

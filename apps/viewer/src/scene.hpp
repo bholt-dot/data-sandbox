@@ -16,6 +16,7 @@
 #include "viewer/view_snapshot.hpp"
 
 #include "expanse/orbit.hpp"
+#include "expanse/transit.hpp"
 #include "expanse/units.hpp"
 #include "expanse/vec3.hpp"
 
@@ -83,6 +84,9 @@ static_assert(sizeof(LineVertex) == 12);
 
 enum class ObjectKind : std::uint8_t { body, station, ship };
 
+// Finer than ObjectKind: what the labels and info panel call an object.
+enum class ObjectClass : std::uint8_t { star, planet, dwarf_planet, moon, asteroid, station, ship };
+
 // Identifies a scene object across snapshots: a content DefId index for bodies and stations, a
 // World handle (index + generation) for ships.
 struct ObjectRef {
@@ -104,6 +108,11 @@ struct SceneObject {
     SpriteShape shape = SpriteShape::disc;
     float glow = 0.0F;
     bool emissive = false; // the Sun: lit from within, not by the Sun
+    ObjectClass cls = ObjectClass::asteroid;
+    bool player = false; // a ship of the player's company
+    // What the object sits at or orbits, other than the Sun: a moon's planet, a station's body,
+    // a docked ship's station. Labels of hosted objects wait until they separate from the host.
+    std::optional<ObjectRef> host{};
     // Camera limits when this object is the focus: never closer than min_distance_m (outside a
     // body, or the planet a station sits at); frame_distance_m is the distance a jump to it uses.
     double min_distance_m = 0.0;
@@ -122,6 +131,21 @@ struct SceneSegment {
     expanse::Vec3 from;
     expanse::Vec3 to;
     Rgba color;
+    bool dashed = false; // provisional (a plotted course not yet flown)
+};
+
+// A transit, flown or plotted, for the overlay: flip marker and arrival label.
+struct SceneCourse {
+    expanse::Vec3 from;
+    expanse::Vec3 to;
+    expanse::Vec3 flip; // where the ship turns over to brake
+    sim::Time departure{};
+    sim::Time arrival{};
+    double delta_v_km_s = 0.0;
+    std::string destination; // display name
+    bool preview = false;    // a plot, not a committed transit
+    bool feasible = true;
+    Rgba color;
 };
 
 // A decoration without an identity of its own (focus ring, plotted destination).
@@ -138,6 +162,7 @@ struct Scene {
     std::vector<SceneOrbit> orbits;
     std::vector<SceneSegment> segments;
     std::vector<SceneMarker> markers;
+    std::vector<SceneCourse> courses;
     std::optional<ObjectRef> focus_ship; // ViewHints::focus_ship, if that ship exists
 
     const SceneObject* find(ObjectRef ref) const;
@@ -211,8 +236,13 @@ struct FrameData {
     std::vector<SphereInstance> spheres;
     std::vector<SpriteInstance> sprites;
     std::vector<LineVertex> line_vertices;
-    std::vector<StripDraw> strips;
+    std::vector<StripDraw> strips; // line strips
+    std::vector<StripDraw> dashes; // line lists (every pair of vertices is one dash)
 };
+
+// Where a straight-line transit flips: the point `flip_time()` into its burn profile.
+expanse::Vec3 flip_point(const expanse::Vec3& start, const expanse::Vec3& end,
+                         const expanse::transit::BurnProfile& profile);
 
 // Per-frame, camera-relative GPU data for a viewport of width x height pixels. Reuses `out`'s
 // storage, so a steady scene allocates nothing per frame.

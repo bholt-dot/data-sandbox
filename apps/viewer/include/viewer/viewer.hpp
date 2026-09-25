@@ -28,6 +28,8 @@ struct ViewerOptions {
     std::optional<double> distance_au;
     std::optional<double> yaw_deg;
     std::optional<double> pitch_deg;
+    // Open with the info panel of the focus showing (as after a click on it).
+    bool show_info = false;
     // Print the controls to stderr when the window opens.
     bool print_controls = true;
 };

@@ -21,8 +21,8 @@ need neither SDL3 nor glslang. Vulkan only, shaders are GLSL 450 compiled to SPI
 and embedded (`cmake/Shaders.cmake`).
 
 ```bash
-sudo pacman -S sdl3 glslang vulkan-icd-loader   # Arch; plus your Vulkan driver (vulkan-radeon,
-                                                # vulkan-intel, nvidia-utils) or vulkan-swrast
+sudo pacman -S sdl3 sdl3_ttf glslang vulkan-icd-loader   # Arch; plus your Vulkan driver
+                                   # (vulkan-radeon, vulkan-intel, nvidia-utils) or vulkan-swrast
 cmake --preset viewer && cmake --build --preset viewer -j && ctest --preset viewer
 ./build/viewer/apps/viewer/belter-view                     # controls below
 cmake --preset viewer-release && cmake --build --preset viewer-release -j   # for playing
@@ -30,19 +30,26 @@ cmake --preset viewer-release && cmake --build --preset viewer-release -j   # fo
 SDL_VIDEO_DRIVER=offscreen ./build/viewer/apps/viewer/belter-view --screenshot out.png  # headless
 ```
 
-Without a system SDL3 >= 3.4 the build fetches and statically builds a pinned SDL. Shader
+Without a system SDL3 >= 3.4 the build fetches and statically builds a pinned SDL; likewise
+SDL3_ttf >= 3.2 (vendored FreeType only, no HarfBuzz). The UI font (Fira Sans, OFL,
+`apps/viewer/assets/fonts/`) is embedded like the shaders (`cmake/Embed.cmake`). Shader
 bindings follow SDL's SPIR-V layout: vertex set 0 = textures/storage, set 1 = uniforms;
 fragment set 2 / set 3 (see `apps/viewer/shaders/frame.glsl`).
 
-Viewer controls: left-drag orbit, click to focus, shift/right/middle-drag pan, wheel or +/- zoom (log scale),
-F player's ship, Home Sun, 1-9 Earth Luna Mars Ceres-cluster Vesta Jupiter Ganymede Saturn Titan,
-Tab/Shift+Tab cycle stations, `[` `]` cycle ships, R reset, Esc/Q close. `belter-view --focus KEY
---distance-au X --yaw DEG --pitch DEG` sets the opening view (screenshot tests use it).
+Viewer controls: left-drag orbit, click to focus (and open its info panel), shift/right/middle-drag
+pan, wheel or +/- zoom (log scale), F player's ship, Home Sun, 1-9 Earth Luna Mars Ceres-cluster
+Vesta Jupiter Ganymede Saturn Titan, Tab/Shift+Tab cycle stations, `[` `]` cycle ships, I info
+panel, H hotkey hints, R reset, Esc closes the panel (then the window), Q close. `belter-view
+--focus KEY --distance-au X --yaw DEG --pitch DEG [--info]` sets the opening view (screenshot
+tests use it).
 
 Viewer rendering rules: world positions stay double on the CPU; every draw is made camera-relative
 (subtract the eye in double, then narrow to float, `camera_relative()` in `scene.hpp`). Depth is
 reversed-Z (D32_FLOAT, clear 0, compare GREATER, infinite far plane). Input handling, camera and
-picking are SDL-free (`nav.hpp`, `pick.hpp`) and unit-tested.
+picking are SDL-free (`nav.hpp`, `pick.hpp`) and unit-tested. So are the overlay's words and
+layout: `info.hpp` (panel/tooltip text from the snapshot only, scale bar) and `overlay.hpp` (label
+priority, fade and greedy declutter, HUD and panel layout as a draw list, measured through a
+callback); `text.hpp` only rasterises (SDL_ttf GPU text engine) and draws it, after the scene.
 
 ## Layout & layering
 
