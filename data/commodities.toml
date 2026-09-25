@@ -1,0 +1,37 @@
+# Trade goods. Prices are credits per tonne at an unstressed market.
+# Water doubles as reaction mass for Epstein drives.
+
+[commodity.water]
+name = "Water ice"
+category = "volatiles"
+base_price = 30
+
+[commodity.oxygen]
+name = "Oxygen"
+category = "volatiles"
+base_price = 90
+
+[commodity.food]
+name = "Foodstuffs"
+category = "food"
+base_price = 420
+
+[commodity.ore]
+name = "Raw ore"
+category = "industrial"
+base_price = 60
+
+[commodity.metals]
+name = "Refined metals"
+category = "industrial"
+base_price = 260
+
+[commodity.parts]
+name = "Spare parts"
+category = "industrial"
+base_price = 1200
+
+[commodity.medical]
+name = "Medical supplies"
+category = "medical"
+base_price = 3000

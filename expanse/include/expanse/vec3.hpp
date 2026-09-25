@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cmath>
+#include <tuple>
 
 namespace expanse {
 
@@ -11,6 +12,7 @@ struct Vec3 {
     double z = 0.0;
 
     constexpr bool operator==(const Vec3&) const = default;
+    static constexpr auto fields(auto& self) { return std::tie(self.x, self.y, self.z); }
 
     constexpr Vec3 operator+(const Vec3& o) const { return {x + o.x, y + o.y, z + o.z}; }
     constexpr Vec3 operator-(const Vec3& o) const { return {x - o.x, y - o.y, z - o.z}; }

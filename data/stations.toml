@@ -1,0 +1,69 @@
+# Stations. Without an `orbit` a station sits at its body (surface port / co-located).
+
+[station.ceres_station]
+name = "Ceres Station"
+body = "ceres"
+faction = "belt"
+population = 6000000
+docking_fee = 150
+market = [
+  { commodity = "water", production = 400, consumption = 250, stock = 30000 },
+  { commodity = "food", consumption = 120, stock = 2500 },
+  { commodity = "parts", production = 4, consumption = 6, stock = 300 },
+  { commodity = "medical", consumption = 1, stock = 40 },
+  { commodity = "oxygen", production = 60, consumption = 70, stock = 3000 },
+]
+
+[station.tycho_station]
+name = "Tycho Station"
+body = "sun"
+orbit = { a_au = 2.55, e = 0.02, i_deg = 3.0, node_deg = 40.0, peri_deg = 10.0, mean_anomaly_deg = 200.0 }
+faction = "belt"
+population = 15000
+docking_fee = 220
+market = [
+  { commodity = "metals", consumption = 40, stock = 1500 },
+  { commodity = "parts", production = 20, stock = 900 },
+  { commodity = "water", consumption = 30, stock = 2000 },
+  { commodity = "food", consumption = 10, stock = 500 },
+]
+
+[station.vesta_dock]
+name = "Vesta Dock"
+body = "vesta"
+faction = "independent"
+population = 90000
+docking_fee = 90
+market = [
+  { commodity = "ore", production = 300, stock = 20000 },
+  { commodity = "metals", production = 60, consumption = 10, stock = 2500 },
+  { commodity = "food", consumption = 15, stock = 400 },
+  { commodity = "water", consumption = 25, stock = 800 },
+]
+
+[station.pallas_refinery]
+name = "Pallas Refinery"
+body = "pallas"
+faction = "belt"
+population = 40000
+docking_fee = 80
+market = [
+  { commodity = "ore", consumption = 250, stock = 6000 },
+  { commodity = "metals", production = 120, stock = 3000 },
+  { commodity = "water", consumption = 40, stock = 1500 },
+  { commodity = "food", consumption = 8, stock = 300 },
+]
+
+[station.mars_highport]
+name = "Mars Highport"
+body = "mars"
+orbit = { a_km = 20400, e = 0.0 }
+faction = "mars"
+population = 250000
+docking_fee = 400
+market = [
+  { commodity = "food", production = 150, consumption = 60, stock = 8000 },
+  { commodity = "medical", production = 3, consumption = 1, stock = 200 },
+  { commodity = "parts", production = 10, consumption = 12, stock = 700 },
+  { commodity = "water", consumption = 80, stock = 5000 },
+]

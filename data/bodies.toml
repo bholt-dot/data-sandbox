@@ -1,0 +1,66 @@
+# Bodies on Keplerian rails. Elements are heliocentric/parent-relative at J2000.
+# Planets: Standish, "Keplerian Elements for Approximate Positions of the Major Planets" (JPL),
+# converted as peri = varpi - node, M = L - varpi. Asteroid mean anomalies are approximate
+# (placeholder until the full dataset bean lands).
+
+[body.sun]
+name = "Sol"
+kind = "star"
+gm_km3_s2 = 1.32712440018e11
+radius_km = 695700
+
+[body.earth]
+name = "Earth"
+kind = "planet"
+parent = "sun"
+gm_km3_s2 = 398600.4418
+radius_km = 6371
+orbit = { a_au = 1.00000261, e = 0.01671123, i_deg = -0.00001531, node_deg = 0.0, peri_deg = 102.93768193, mean_anomaly_deg = -2.47311027 }
+
+[body.luna]
+name = "Luna"
+kind = "moon"
+parent = "earth"
+gm_km3_s2 = 4902.8
+radius_km = 1737
+orbit = { a_km = 384400, e = 0.0549, i_deg = 5.145, node_deg = 125.08, peri_deg = 318.15, mean_anomaly_deg = 135.27 }
+
+[body.mars]
+name = "Mars"
+kind = "planet"
+parent = "sun"
+gm_km3_s2 = 42828.37
+radius_km = 3389.5
+orbit = { a_au = 1.52371034, e = 0.09339410, i_deg = 1.84969142, node_deg = 49.55953891, peri_deg = -73.5031685, mean_anomaly_deg = 19.39019754 }
+
+[body.jupiter]
+name = "Jupiter"
+kind = "planet"
+parent = "sun"
+gm_km3_s2 = 1.26686534e8
+radius_km = 69911
+orbit = { a_au = 5.20288700, e = 0.04838624, i_deg = 1.30439695, node_deg = 100.47390909, peri_deg = -85.74542926, mean_anomaly_deg = 19.66796068 }
+
+[body.ceres]
+name = "Ceres"
+kind = "dwarf_planet"
+parent = "sun"
+gm_km3_s2 = 62.6
+radius_km = 470
+orbit = { a_au = 2.7675, e = 0.0758, i_deg = 10.59, node_deg = 80.31, peri_deg = 73.60, mean_anomaly_deg = 6.0 }
+
+[body.vesta]
+name = "Vesta"
+kind = "asteroid"
+parent = "sun"
+gm_km3_s2 = 17.3
+radius_km = 263
+orbit = { a_au = 2.3615, e = 0.0887, i_deg = 7.14, node_deg = 103.85, peri_deg = 151.20, mean_anomaly_deg = 150.0 }
+
+[body.pallas]
+name = "Pallas"
+kind = "asteroid"
+parent = "sun"
+gm_km3_s2 = 13.6
+radius_km = 256
+orbit = { a_au = 2.7725, e = 0.2300, i_deg = 34.84, node_deg = 173.08, peri_deg = 310.05, mean_anomaly_deg = 300.0 }

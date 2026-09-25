@@ -7,6 +7,7 @@
 #include <limits>
 #include <optional>
 #include <string_view>
+#include <tuple>
 
 // Torch-ship transits: constant-acceleration burn profiles, reaction mass, and the moving-target
 // intercept that turns "go to Ceres" into a departure/arrival pair.
@@ -48,6 +49,10 @@ struct BurnProfile {
     double delta_v() const { return 2.0 * peak_speed; }
     // Time from start at which the ship flips (middle of the coast; exactly mid-trip).
     double flip_time() const { return burn_time + 0.5 * coast_time; }
+
+    static constexpr auto fields(auto& self) {
+        return std::tie(self.distance, self.accel, self.peak_speed, self.burn_time, self.coast_time);
+    }
 };
 
 // Pure flip-and-burn. Precondition: distance >= 0, accel > 0.

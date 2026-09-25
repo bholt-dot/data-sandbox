@@ -1,0 +1,11 @@
+# Ship classes. Epstein drive exhaust velocity ~10,000 km/s (see transit.hpp for rationale).
+
+[ship_class.mule_hauler]
+name = "Mule-class light hauler"
+dry_mass_t = 400
+cargo_capacity_t = 600
+reaction_mass_capacity_t = 500
+exhaust_velocity_km_s = 10000
+max_accel_g = 2.5
+crew_berths = 4
+price = 450000

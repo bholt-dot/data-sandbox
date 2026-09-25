@@ -1,0 +1,17 @@
+[scenario.secondhand]
+name = "Secondhand"
+description = """
+You bought the Dustkicker from a Ceres broker who swore she only needed new seals.
+She needs new everything. The loan shark wants his money every Monday, the tank is a
+third full, and you are the whole crew. Find work."""
+start_date = "2350-03-14"
+start_station = "ceres_station"
+ship_class = "mule_hauler"
+ship_name = "Dustkicker"
+company_name = "Dustkicker Hauling"
+cash = 1850
+reaction_mass_fraction = 0.35
+hull_condition = 0.62
+loan_principal = 380000
+loan_weekly_payment = 4200
+loan_missed_payment_limit = 3
