@@ -122,6 +122,30 @@ orbit = { a_au = 1.0, a_km = 5.0 }
     CHECK(diags3.contains("exactly one of"));
 }
 
+TEST_CASE("body display colours are optional hex strings") {
+    CHECK(parse_hex_color("#c1440e") == 0xc1440eU);
+    CHECK(parse_hex_color("#FFe7B0") == 0xffe7b0U);
+    CHECK_FALSE(parse_hex_color("c1440e"));
+    CHECK_FALSE(parse_hex_color("#c1440"));
+    CHECK_FALSE(parse_hex_color("#c1440g"));
+
+    const Content& c = game_content();
+    const auto& bodies = c.table<BodyDef>();
+    CHECK(bodies[c.find<BodyDef>("mars")].color == "#c1440e");
+    CHECK_FALSE(bodies[c.find<BodyDef>("eros")].color); // optional: the viewer falls back
+
+    sim::Diagnostics diags;
+    auto bad = load_inline(R"(
+[body.sun]
+name = "Sun"
+kind = "star"
+radius_km = 1
+color = "yellow"
+)", diags);
+    CHECK_FALSE(bad);
+    CHECK(diags.contains("must be a colour"));
+}
+
 TEST_CASE("secondhand scenario starts dirt poor") {
     const Content& c = game_content();
     World w = new_game(c, "secondhand", 42);

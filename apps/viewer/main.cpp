@@ -37,8 +37,15 @@ constexpr std::string_view usage = R"(usage: belter-view [options]
   --frames N          exit after N frames
   --screenshot FILE   write the last frame to FILE (.png or .bmp); implies --frames 3 unless given
   --gpu-debug         enable SDL GPU debug mode / Vulkan validation layers
+  --focus KEY         start looking at a body or station (content key, e.g. earth,
+                      ceres_station) or 'ship' (the player's ship)
+  --distance-au X     start X AU from the focus
+  --yaw DEG           start at this camera yaw (around the ecliptic pole)
+  --pitch DEG         start at this camera elevation above the ecliptic
 
-Controls: drag to orbit, mouse wheel to zoom, R to reset the camera, Esc or Q to close.
+Controls: left-drag orbit, shift/right-drag pan, wheel or +/- zoom, F player ship, Home Sun,
+1-9 bookmarks (Earth Luna Mars Ceres Vesta Jupiter Ganymede Saturn Titan), Tab/Shift+Tab
+stations, [ ] ships, R reset, Esc or Q close.
 Headless: SDL_VIDEO_DRIVER=offscreen belter-view --screenshot out.png
 )";
 
@@ -93,6 +100,16 @@ bool parse_args(std::span<char*> argv, Args& args) {
             if (!parse_number(v, args.view.max_frames) || args.view.max_frames <= 0) return false;
         } else if (a == "--screenshot") {
             args.view.screenshot = v;
+        } else if (a == "--focus") {
+            args.view.focus = v;
+        } else if (a == "--distance-au") {
+            double d = 0.0;
+            if (!parse_number(v, d) || d <= 0.0) return false;
+            args.view.distance_au = d;
+        } else if (a == "--yaw" || a == "--pitch") {
+            double deg = 0.0;
+            if (!parse_number(v, deg)) return false;
+            (a == "--yaw" ? args.view.yaw_deg : args.view.pitch_deg) = deg;
         } else {
             return false;
         }

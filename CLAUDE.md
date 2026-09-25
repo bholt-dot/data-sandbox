@@ -24,7 +24,7 @@ and embedded (`cmake/Shaders.cmake`).
 sudo pacman -S sdl3 glslang vulkan-icd-loader   # Arch; plus your Vulkan driver (vulkan-radeon,
                                                 # vulkan-intel, nvidia-utils) or vulkan-swrast
 cmake --preset viewer && cmake --build --preset viewer -j && ctest --preset viewer
-./build/viewer/apps/viewer/belter-view                     # drag, wheel, R, Esc
+./build/viewer/apps/viewer/belter-view                     # controls below
 cmake --preset viewer-release && cmake --build --preset viewer-release -j   # for playing
 ./build/viewer-release/apps/belter --view                  # shell + window
 SDL_VIDEO_DRIVER=offscreen ./build/viewer/apps/viewer/belter-view --screenshot out.png  # headless
@@ -33,6 +33,16 @@ SDL_VIDEO_DRIVER=offscreen ./build/viewer/apps/viewer/belter-view --screenshot o
 Without a system SDL3 >= 3.4 the build fetches and statically builds a pinned SDL. Shader
 bindings follow SDL's SPIR-V layout: vertex set 0 = textures/storage, set 1 = uniforms;
 fragment set 2 / set 3 (see `apps/viewer/shaders/frame.glsl`).
+
+Viewer controls: left-drag orbit, click to focus, shift/right/middle-drag pan, wheel or +/- zoom (log scale),
+F player's ship, Home Sun, 1-9 Earth Luna Mars Ceres-cluster Vesta Jupiter Ganymede Saturn Titan,
+Tab/Shift+Tab cycle stations, `[` `]` cycle ships, R reset, Esc/Q close. `belter-view --focus KEY
+--distance-au X --yaw DEG --pitch DEG` sets the opening view (screenshot tests use it).
+
+Viewer rendering rules: world positions stay double on the CPU; every draw is made camera-relative
+(subtract the eye in double, then narrow to float, `camera_relative()` in `scene.hpp`). Depth is
+reversed-Z (D32_FLOAT, clear 0, compare GREATER, infinite far plane). Input handling, camera and
+picking are SDL-free (`nav.hpp`, `pick.hpp`) and unit-tested.
 
 ## Layout & layering
 

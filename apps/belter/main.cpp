@@ -166,9 +166,14 @@ int run_with_viewer(const Args& args, expanse::ShellBus& bus, expanse::Session& 
         viewer::ViewerOptions opts;
         opts.max_frames = 30;
         opts.screenshot = args.screenshot;
+        opts.print_controls = false;
         return rc != 0 ? rc : viewer::run_viewer(link, opts);
     }
 
+    // Before the shell (and a full-screen interface) takes over the terminal.
+    std::cerr << "belter: viewer controls: " << viewer::controls_help() << '\n';
+    viewer::ViewerOptions opts;
+    opts.print_controls = false;
     int shell_rc = 0;
     std::thread shell([&] {
         shell_rc = run_shell(args, bus, session);
@@ -176,7 +181,7 @@ int run_with_viewer(const Args& args, expanse::ShellBus& bus, expanse::Session& 
             link.request_close(); // leaving the shell closes the window
         }
     });
-    if (viewer::run_viewer(link, {}) != 0) {
+    if (viewer::run_viewer(link, opts) != 0) {
         std::cerr << "belter: the viewer could not start; the shell carries on without it\n";
     }
     shell.join();

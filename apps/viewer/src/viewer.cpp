@@ -2,6 +2,7 @@
 
 #include "expanse/calendar.hpp"
 #include "module_pins.hpp"
+#include "nav.hpp"
 #include "renderer.hpp"
 #include "scene.hpp"
 
@@ -58,14 +59,16 @@ struct Platform {
     }
 };
 
-// Scene-sized offscreen colour target; recreated when the drawable size changes.
+// Scene-sized offscreen colour and depth targets; recreated when the drawable size changes.
 struct SceneTarget {
+    SDL_GPUTextureFormat depth_format = SDL_GPU_TEXTUREFORMAT_D32_FLOAT;
     GpuTexture texture;
+    GpuTexture depth;
     std::uint32_t width = 0;
     std::uint32_t height = 0;
 
     bool ensure(SDL_GPUDevice* device, std::uint32_t w, std::uint32_t h) {
-        if (texture && w == width && h == height) {
+        if (texture && depth && w == width && h == height) {
             return true;
         }
         SDL_GPUTextureCreateInfo info{};
@@ -78,9 +81,12 @@ struct SceneTarget {
         info.layer_count_or_depth = 1;
         info.num_levels = 1;
         texture = GpuTexture{device, SDL_CreateGPUTexture(device, &info)};
+        info.format = depth_format;
+        info.usage = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET;
+        depth = GpuTexture{device, SDL_CreateGPUTexture(device, &info)};
         width = w;
         height = h;
-        return static_cast<bool>(texture);
+        return texture && depth;
     }
 };
 
@@ -148,47 +154,101 @@ bool submit_and_save(SDL_GPUDevice* device, SDL_GPUCommandBuffer* cmd, const Sce
     return ok;
 }
 
-struct Input {
-    bool dragging = false;
-    Camera home;
-};
+Key to_key(SDL_Keycode key) {
+    if (key >= SDLK_0 && key <= SDLK_9) {
+        return Key::digit;
+    }
+    switch (key) {
+    case SDLK_F:
+        return Key::f;
+    case SDLK_HOME:
+        return Key::home;
+    case SDLK_TAB:
+        return Key::tab;
+    case SDLK_LEFTBRACKET:
+        return Key::left_bracket;
+    case SDLK_RIGHTBRACKET:
+        return Key::right_bracket;
+    case SDLK_R:
+        return Key::r;
+    case SDLK_PLUS:
+    case SDLK_EQUALS: // + without shift on US layouts
+    case SDLK_KP_PLUS:
+        return Key::plus;
+    case SDLK_MINUS:
+    case SDLK_KP_MINUS:
+        return Key::minus;
+    case SDLK_ESCAPE:
+        return Key::escape;
+    case SDLK_Q:
+        return Key::q;
+    default:
+        return Key::other;
+    }
+}
 
-// Minimal controls until the camera bean: drag to orbit, wheel to zoom, R to reset, Esc/Q to close.
-bool handle_event(const SDL_Event& e, Camera& camera, Input& input) {
+// SDL event -> the SDL-free InputEvent the Navigator understands (nullopt: not one of ours).
+// Mouse coordinates arrive in window points; `density` converts them to drawable pixels.
+std::optional<InputEvent> to_input(const SDL_Event& e, double density) {
+    using Type = InputEvent::Type;
     switch (e.type) {
     case SDL_EVENT_QUIT:
     case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
-        return false;
-    case SDL_EVENT_KEY_DOWN:
-        if (e.key.key == SDLK_ESCAPE || e.key.key == SDLK_Q) {
-            return false;
-        }
-        if (e.key.key == SDLK_R) {
-            camera = input.home;
-        }
-        break;
-    case SDL_EVENT_MOUSE_BUTTON_DOWN:
-    case SDL_EVENT_MOUSE_BUTTON_UP:
-        if (e.button.button == SDL_BUTTON_LEFT) {
-            input.dragging = e.button.down;
-        }
-        break;
-    case SDL_EVENT_MOUSE_MOTION:
-        if (input.dragging) {
-            constexpr double radians_per_px = 0.005;
-            camera.yaw_rad -= static_cast<double>(e.motion.xrel) * radians_per_px;
-            camera.pitch_rad = std::clamp(camera.pitch_rad + static_cast<double>(e.motion.yrel) * radians_per_px,
-                                          expanse::units::deg(-89.0), expanse::units::deg(89.0));
-        }
-        break;
-    case SDL_EVENT_MOUSE_WHEEL:
-        camera.distance_m = std::clamp(camera.distance_m * std::pow(0.85, static_cast<double>(e.wheel.y)),
-                                       1.0e-4 * expanse::units::au_m, 200.0 * expanse::units::au_m);
-        break;
-    default:
-        break;
+        return InputEvent{.type = Type::quit};
+    case SDL_EVENT_KEY_DOWN: {
+        const Key key = to_key(e.key.key);
+        return InputEvent{.type = Type::key_down,
+                          .key = key,
+                          .digit = key == Key::digit ? static_cast<int>(e.key.key - SDLK_0) : 0,
+                          .shift = (e.key.mod & SDL_KMOD_SHIFT) != 0};
     }
-    return true;
+    case SDL_EVENT_MOUSE_BUTTON_DOWN:
+    case SDL_EVENT_MOUSE_BUTTON_UP: {
+        MouseButton button = MouseButton::left;
+        if (e.button.button == SDL_BUTTON_MIDDLE) {
+            button = MouseButton::middle;
+        } else if (e.button.button == SDL_BUTTON_RIGHT) {
+            button = MouseButton::right;
+        } else if (e.button.button != SDL_BUTTON_LEFT) {
+            return std::nullopt;
+        }
+        return InputEvent{.type = e.button.down ? Type::button_down : Type::button_up,
+                          .shift = (SDL_GetModState() & SDL_KMOD_SHIFT) != 0,
+                          .button = button,
+                          .x = static_cast<double>(e.button.x) * density,
+                          .y = static_cast<double>(e.button.y) * density};
+    }
+    case SDL_EVENT_MOUSE_MOTION:
+        return InputEvent{.type = Type::motion,
+                          .dx = static_cast<double>(e.motion.xrel) * density,
+                          .dy = static_cast<double>(e.motion.yrel) * density,
+                          .x = static_cast<double>(e.motion.x) * density,
+                          .y = static_cast<double>(e.motion.y) * density};
+    case SDL_EVENT_MOUSE_WHEEL:
+        return InputEvent{.type = Type::wheel, .dy = static_cast<double>(e.wheel.y)};
+    default:
+        return std::nullopt;
+    }
+}
+
+// The initial view from ViewerOptions, applied without a fly-in once the first scene exists.
+void apply_initial_view(Navigator& nav, const Scene& scene, const ViewerOptions& options) {
+    OrbitCamera& cam = nav.orbit_camera();
+    const std::optional<double> distance =
+        options.distance_au ? std::optional(*options.distance_au * expanse::units::au_m) : std::nullopt;
+    if (options.focus.empty() || !nav.focus_key(options.focus, scene, distance, false)) {
+        if (!options.focus.empty()) {
+            std::cerr << std::format("belter viewer: nothing called '{}' to focus on\n", options.focus);
+        }
+        cam.reset(scene, false);
+        if (distance) {
+            cam.zoom(std::log(cam.target_distance_m() / *distance) / std::log(OrbitCamera::zoom_step));
+        }
+    }
+    const Camera defaults;
+    cam.set_angles(options.yaw_deg ? expanse::units::deg(*options.yaw_deg) : defaults.yaw_rad,
+                   options.pitch_deg ? expanse::units::deg(*options.pitch_deg) : defaults.pitch_rad);
+    cam.update(60.0, scene); // settle any zoom easing
 }
 
 int run(ViewerLink& link, const ViewerOptions& options) {
@@ -222,38 +282,70 @@ int run(ViewerLink& link, const ViewerOptions& options) {
         return fail("SDL_SetGPUSwapchainParameters");
     }
 
-    std::unique_ptr<Renderer> renderer = Renderer::create(device);
+    SceneTarget target;
+    target.depth_format = Renderer::choose_depth_format(device);
+    if (target.depth_format == SDL_GPU_TEXTUREFORMAT_D24_UNORM) {
+        std::cerr << "belter viewer: no float depth buffer on this GPU; distant objects may z-fight\n";
+    }
+    std::unique_ptr<Renderer> renderer = Renderer::create(device, target.depth_format);
     if (!renderer) {
         return fail("creating pipelines");
     }
+    if (options.print_controls) {
+        std::cerr << std::format("belter viewer: {}\n", controls_help_text);
+    }
 
-    Camera camera;
-    Input input{.dragging = false, .home = camera};
-    SceneTarget target;
+    Navigator nav;
+    std::optional<ObjectRef> hovered;
+    bool initial_view_applied = false;
     std::shared_ptr<const ViewSnapshot> shown;
     Scene scene;
     FrameData frame;
-    bool scene_dirty = true;
+    Uint64 last_ns = SDL_GetTicksNS();
 
     for (int frame_no = 1;; ++frame_no) {
         bool open = true;
         SDL_Event event;
+        const double density = std::max(static_cast<double>(SDL_GetWindowPixelDensity(platform.window)), 1e-3);
         while (SDL_PollEvent(&event)) {
-            open = handle_event(event, camera, input) && open;
+            if (const std::optional<InputEvent> input = to_input(event, density)) {
+                open = nav.handle(*input, scene) && open;
+            }
         }
         if (!open || link.close_requested()) {
             break;
         }
 
+        bool retitle = false;
         if (std::shared_ptr<const ViewSnapshot> latest = link.latest(); latest != shown) {
             shown = std::move(latest);
             scene = shown ? build_scene(*shown) : Scene{};
-            scene_dirty = true;
-            const std::string title =
-                shown ? std::format("{} - {}", options.title, expanse::calendar::format_datetime(shown->time))
-                      : options.title;
+            retitle = true;
+            if (!initial_view_applied && !scene.objects.empty()) {
+                apply_initial_view(nav, scene, options);
+                initial_view_applied = true;
+            }
+        }
+        // Until the labels overlay exists, the title bar names what the cursor is over.
+        if (const std::optional<ObjectRef> now_hovered = nav.hovered(scene); now_hovered != hovered) {
+            hovered = now_hovered;
+            retitle = true;
+        }
+        if (retitle) {
+            std::string title = options.title;
+            if (shown) {
+                title += std::format(" - {}", expanse::calendar::format_datetime(shown->time));
+            }
+            if (const SceneObject* o = hovered ? scene.find(*hovered) : nullptr) {
+                title += std::format(" - {}", o->name);
+            }
             SDL_SetWindowTitle(platform.window, title.c_str());
         }
+
+        const Uint64 now_ns = SDL_GetTicksNS();
+        const double dt = std::min(static_cast<double>(now_ns - last_ns) * 1e-9, 0.1); // no leaps after a stall
+        last_ns = now_ns;
+        nav.update(dt, scene);
 
         SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(device);
         if (cmd == nullptr) {
@@ -276,15 +368,15 @@ int run(ViewerLink& link, const ViewerOptions& options) {
             return submit_and_fail(cmd, "creating the scene target");
         }
 
-        prepare_frame(scene, camera, static_cast<float>(w), static_cast<float>(h), frame);
+        nav.set_viewport(static_cast<double>(w), static_cast<double>(h));
+        prepare_frame(scene, nav.camera(), static_cast<float>(w), static_cast<float>(h), frame);
         SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(cmd);
-        const bool uploaded = renderer->upload(copy, scene, scene_dirty, frame);
+        const bool uploaded = renderer->upload(copy, frame);
         SDL_EndGPUCopyPass(copy);
         if (!uploaded) {
             return submit_and_fail(cmd, "uploading frame data");
         }
-        scene_dirty = false;
-        renderer->draw(cmd, target.texture.get(), frame);
+        renderer->draw(cmd, target.texture.get(), target.depth.get(), frame);
 
         SDL_GPUBlitInfo blit{};
         blit.source.texture = target.texture.get();
@@ -317,6 +409,8 @@ int run(ViewerLink& link, const ViewerOptions& options) {
 }
 
 } // namespace
+
+std::string_view controls_help() { return controls_help_text; }
 
 int run_viewer(ViewerLink& link, const ViewerOptions& options) {
     const int status = run(link, options);

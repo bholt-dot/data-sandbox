@@ -14,6 +14,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -75,9 +76,13 @@ struct BodyDef {
     double gm_km3_s2 = 0.0;                     // needed if anything orbits this body
     double radius_km = 0.0;
     std::optional<OrbitDef> orbit;              // none only for the star
+    std::optional<std::string> color;           // display colour "#rrggbb" (viewer only)
 
     static void describe(sim::Schema<BodyDef>& s);
 };
+
+// 0xRRGGBB from "#rrggbb" (case-insensitive), or nullopt if malformed.
+std::optional<std::uint32_t> parse_hex_color(std::string_view text);
 
 // ---- Stations ---------------------------------------------------------------------------------
 
