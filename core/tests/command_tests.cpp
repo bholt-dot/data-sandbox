@@ -525,3 +525,20 @@ TEST_CASE("completion offers commands options and argument values") {
     CHECK(reg.complete("nosuch ").candidates.empty());
     CHECK(reg.complete("advance 3d # ").candidates.empty());
 }
+
+TEST_CASE("after line observer sees every non empty line") {
+    World world;
+    CommandBus<World> bus;
+    register_world(bus, world);
+    std::vector<std::pair<std::int64_t, bool>> seen; // (world time, ok) after each line
+    bus.on_after_line([&](const World& w, const LineResult& r) { seen.emplace_back(w.now, r.ok()); });
+
+    std::istringstream in("status\n\nadvance 2h\nbogus\n");
+    StreamLineReader reader(in);
+    std::ostringstream out;
+    run_repl(bus, world, reader, out);
+    REQUIRE(seen.size() == 3); // the blank line is skipped
+    CHECK(seen[0] == std::pair<std::int64_t, bool>{0, true});
+    CHECK(seen[1] == std::pair<std::int64_t, bool>{7200, true}); // after the action applied
+    CHECK(seen[2] == std::pair<std::int64_t, bool>{7200, false});
+}

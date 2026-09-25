@@ -1,0 +1,3 @@
+new secondhand --seed 1
+plot mars_highport --accel 0.1g
+go hollow_nail

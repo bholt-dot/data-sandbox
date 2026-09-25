@@ -100,10 +100,12 @@ TEST_CASE("ViewerLink hands snapshots from a publisher thread to a reader thread
 }
 
 TEST_CASE("make_snapshot copies the world so later changes do not leak into it") {
-    expanse::Session session{game_content(), std::nullopt, 0};
+    expanse::Session session;
+    session.content = game_content();
     const auto empty = viewer::make_snapshot(session);
     CHECK_FALSE(empty->world.has_value());
     CHECK(empty->content == session.content);
+    CHECK_FALSE(empty->hints.plot_preview.has_value());
 
     const std::string scenario = session.content->table<expanse::ScenarioDef>().keys().front();
     session.world = expanse::new_game(*session.content, scenario, 7);

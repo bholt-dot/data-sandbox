@@ -150,16 +150,18 @@ public:
 
     // submit_line + apply_pending: the unit of work for a REPL line or a script line.
     LineResult execute_line(std::string_view line, Context& ctx, Doc& out) {
-        LineResult r = submit_line(line, std::as_const(ctx), out);
-        if (r.status == LineResult::Status::error) {
-            return r;
-        }
-        ApplyResult applied = apply_pending(ctx, out);
-        if (!applied.errors.empty()) {
-            return {LineResult::Status::error, std::move(applied.errors.front())};
+        LineResult r = run_line(line, ctx, out);
+        if (after_line_ && r.status != LineResult::Status::empty) {
+            after_line_(std::as_const(ctx), r);
         }
         return r;
     }
+
+    // Observer called after every non-empty line (queries, actions and failures alike), on the
+    // thread that executes lines. For presentation only (e.g. publishing a snapshot to a viewer):
+    // it gets a const context and must not feed anything back into the simulation.
+    using AfterLine = std::function<void(const Context&, const LineResult&)>;
+    void on_after_line(AfterLine fn) { after_line_ = std::move(fn); }
 
     const std::vector<LoggedCommand>& log() const { return log_; }
     void clear_log() { log_.clear(); }
@@ -180,6 +182,18 @@ public:
     bool quit_requested() const { return quit_requested_; }
 
 private:
+    LineResult run_line(std::string_view line, Context& ctx, Doc& out) {
+        LineResult r = submit_line(line, std::as_const(ctx), out);
+        if (r.status == LineResult::Status::error) {
+            return r;
+        }
+        ApplyResult applied = apply_pending(ctx, out);
+        if (!applied.errors.empty()) {
+            return {LineResult::Status::error, std::move(applied.errors.front())};
+        }
+        return r;
+    }
+
     template <class H>
     static const H& find_handler(const std::vector<std::pair<std::string, H>>& handlers,
                                  const std::string& name) {
@@ -238,6 +252,7 @@ private:
     std::deque<Invocation> pending_;
     std::vector<LoggedCommand> log_;
     bool quit_requested_ = false;
+    AfterLine after_line_;
 };
 
 } // namespace sim

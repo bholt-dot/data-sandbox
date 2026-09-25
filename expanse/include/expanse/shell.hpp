@@ -9,6 +9,7 @@
 // here as plain data / styled lines so any front end can show them.
 
 #include "expanse/content.hpp"
+#include "expanse/ships.hpp"
 #include "expanse/world.hpp"
 #include "simcore/command_bus.hpp"
 #include "simcore/doc.hpp"
@@ -25,6 +26,9 @@ struct Session {
     std::shared_ptr<const Content> content;
     std::optional<World> world;
     std::size_t messages_seen = 0; // journal index already shown to the player
+    // Presentation-only: the course from the last `plot`, until the player acts on it or time
+    // moves (a viewer draws it as a provisional line). Never read by the simulation.
+    mutable std::optional<CoursePreview> last_plot;
 };
 
 using ShellBus = sim::CommandBus<Session>;

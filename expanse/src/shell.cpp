@@ -107,6 +107,7 @@ std::string location_text(const Content& c, const World& w, const Ship& ship) {
 
 void advance_and_report(Session& s, sim::Time until, bool stop_on_urgent, Doc& out) {
     World& w = require_world(s);
+    s.last_plot.reset(); // a plotted course departs "now"; once time moves it is stale
     const AdvanceReport r = advance_to(*s.content, w, until, stop_on_urgent);
     flush_messages(s, out);
     out << calendar::format_datetime(w.now()) << " — "
@@ -374,6 +375,7 @@ void register_game_commands(ShellBus& bus, std::shared_ptr<const Content> conten
             if (!s.content->find<ScenarioDef>(k)) {
                 throw CommandError(std::format("unknown scenario '{}'", k));
             }
+            s.last_plot.reset();
             s.world = new_game(*s.content, k, static_cast<std::uint64_t>(inv.get<std::int64_t>("seed")));
             s.messages_seen = 0;
             const ScenarioDef& sc = s.content->table<ScenarioDef>()[s.content->find<ScenarioDef>(k)];
@@ -413,6 +415,7 @@ void register_game_commands(ShellBus& bus, std::shared_ptr<const Content> conten
                        const std::vector<std::uint8_t> bytes{std::istreambuf_iterator<char>(f), {}};
                        try {
                            s.world = load_world(bytes, *s.content);
+                           s.last_plot.reset();
                        } catch (const sim::SerializeError& e) {
                            throw CommandError(std::format("cannot load '{}': {}", path, e.what()));
                        }
@@ -592,7 +595,13 @@ void register_game_commands(ShellBus& bus, std::shared_ptr<const Content> conten
                                     .completer = keys_of<StationDef>(content)}},
                    .options = course_options},
                   [](const Session& s, const Invocation& inv, Doc& out) {
-                      print_preview(*s.content, course_for(s, inv), out);
+                      CoursePreview p = course_for(s, inv);
+                      print_preview(*s.content, p, out);
+                      if (p.feasible()) { // an infeasible preview has no course to draw
+                          s.last_plot = std::move(p);
+                      } else {
+                          s.last_plot.reset();
+                      }
                   });
 
     bus.add_query({.name = "routes",
@@ -626,6 +635,7 @@ void register_game_commands(ShellBus& bus, std::shared_ptr<const Content> conten
                            throw CommandError(p.reason);
                        }
                        // Fly exactly the previewed course: cap dv at the plan's figure.
+                       s.last_plot.reset();
                        const DepartResult r = depart(*s.content, w, player_ship(w), p.destination,
                                                      {p.accel_g, p.delta_v_km_s * (1.0 + 1e-9)});
                        if (r.status != CourseStatus::ok) {
