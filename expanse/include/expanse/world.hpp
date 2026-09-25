@@ -208,10 +208,15 @@ struct GameOver {
 
 // ---- Stations ---------------------------------------------------------------------------------
 
+// Market state; see economy.hpp. Prices are a pure function of stock, so they are not stored.
 struct StationState {
-    std::vector<double> stock; // t, by commodity index
+    std::vector<double> stock;                 // t, by commodity index
+    std::vector<double> unmet;                 // t of demand not met on the last daily tick
+    std::vector<std::uint16_t> disrupted_days; // days left of a supply disruption
 
-    static constexpr auto fields(auto& self) { return std::tie(self.stock); }
+    static constexpr auto fields(auto& self) {
+        return std::tie(self.stock, self.unmet, self.disrupted_days);
+    }
 };
 
 // ---- Player-facing messages -------------------------------------------------------------------

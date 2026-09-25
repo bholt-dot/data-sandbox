@@ -28,6 +28,8 @@ World new_game(const Content& content, std::string_view scenario_key, std::uint6
         (void)id;
         StationState state;
         state.stock.assign(commodities.size(), 0.0);
+        state.unmet.assign(commodities.size(), 0.0);
+        state.disrupted_days.assign(commodities.size(), 0);
         for (const MarketEntryDef& m : st.market) {
             state.stock[index_of(m.commodity)] = m.stock;
         }
