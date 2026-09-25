@@ -24,6 +24,7 @@
 #include <ranges>
 #include <span>
 #include <string_view>
+#include <tuple>
 #include <type_traits>
 
 namespace sim {
@@ -100,6 +101,9 @@ struct Rng {
     }
 
     constexpr bool operator==(const Rng&) const = default;
+
+    // Field list for serialize.hpp / hash.hpp: the state words are the whole stream.
+    static constexpr auto fields(auto& self) { return std::tie(self.s); }
 
     constexpr std::uint64_t next_u64() {
         const std::uint64_t result = std::rotl(s[1] * 5, 7) * 9;

@@ -24,9 +24,9 @@
 //     stale handle can never validate again (ABA protection without silent aliasing).
 //   * clear() invalidates every outstanding handle and rebuilds the free list in slot order.
 //
-// Snapshot/hash friendliness: slots(), free_list_head(), rows() and dense_slots() expose the full
-// internal state in a stable order, which is enough to hash or serialise a table and restore it
-// bit-for-bit (including future handle allocation order).
+// Snapshot/hash friendliness: slots(), free_list(), rows() and dense_slots() expose the full
+// internal state in a stable order; restore() rebuilds a table from it bit-for-bit (including
+// future handle allocation order). sim::Codec<Table> in snapshot.hpp uses both.
 
 #include <compare>
 #include <cstddef>
@@ -35,6 +35,8 @@
 #include <limits>
 #include <span>
 #include <stdexcept>
+#include <string>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -56,6 +58,9 @@ struct Handle {
     constexpr explicit operator bool() const { return !is_null(); }
 
     constexpr auto operator<=>(const Handle&) const = default;
+
+    // Field list for serialize.hpp / hash.hpp.
+    static constexpr auto fields(auto& self) { return std::tie(self.index, self.generation); }
 };
 
 template <typename Tag, typename Row>
@@ -219,6 +224,76 @@ public:
     std::span<const std::uint32_t> dense_slots() const { return dense_to_slot_; }
     std::span<const Slot> slots() const { return slots_; }
     std::uint32_t free_list_head() const { return free_head_; }
+
+    // Free slots in reuse order (head first).
+    std::vector<std::uint32_t> free_list() const {
+        std::vector<std::uint32_t> out;
+        for (std::uint32_t i = free_head_; i != npos; i = slots_[i].next_free) {
+            out.push_back(i);
+        }
+        return out;
+    }
+
+    // Replaces the whole table with a previously captured state: per-slot generations, the dense
+    // order (dense_slots()[i] is the slot of rows[i]) and the free list in reuse order. Every slot
+    // that is neither live nor retired (generation exhausted) must be on the free list, exactly as
+    // the table itself maintains it. Subsequent inserts then return the same handles the original
+    // table would have. Throws std::invalid_argument on inconsistent input; the table is unchanged.
+    void restore(std::span<const std::uint32_t> generations, std::span<const std::uint32_t> dense_slots,
+                 std::vector<Row> rows, std::span<const std::uint32_t> free_list) {
+        auto invalid = [](const char* what) {
+            throw std::invalid_argument(std::string("sim::Table::restore: ") + what);
+        };
+        if (generations.size() > npos) {
+            invalid("too many slots");
+        }
+        if (rows.size() != dense_slots.size()) {
+            invalid("row count does not match dense slot count");
+        }
+        std::vector<Slot> slots(generations.size());
+        for (std::size_t i = 0; i < generations.size(); ++i) {
+            if (generations[i] == 0) {
+                invalid("generation 0 is reserved for null handles");
+            }
+            slots[i].generation = generations[i];
+        }
+        for (std::size_t d = 0; d < dense_slots.size(); ++d) {
+            const std::uint32_t i = dense_slots[d];
+            if (i >= slots.size() || slots[i].dense != npos) {
+                invalid("dense slot out of range or duplicated");
+            }
+            if (slots[i].generation == retired_generation) {
+                invalid("live slot has a retired generation");
+            }
+            slots[i].dense = static_cast<std::uint32_t>(d);
+        }
+        std::vector<bool> on_free_list(slots.size(), false);
+        std::uint32_t head = npos;
+        std::uint32_t tail = npos;
+        for (const std::uint32_t i : free_list) {
+            if (i >= slots.size() || slots[i].dense != npos || on_free_list[i]) {
+                invalid("free slot out of range, live or duplicated");
+            }
+            if (slots[i].generation == retired_generation) {
+                invalid("retired slot on the free list");
+            }
+            on_free_list[i] = true;
+            (tail == npos ? head : slots[tail].next_free) = i;
+            tail = i;
+        }
+        for (std::size_t i = 0; i < slots.size(); ++i) {
+            if (slots[i].dense == npos && !on_free_list[i] &&
+                slots[i].generation != retired_generation) {
+                invalid("free slot missing from the free list");
+            }
+        }
+
+        slots_ = std::move(slots);
+        rows_ = std::move(rows);
+        dense_to_slot_.assign(dense_slots.begin(), dense_slots.end());
+        free_head_ = head;
+        free_tail_ = tail;
+    }
 
 private:
     // Retired slots have exhausted their generations: not live, not on the free list.
