@@ -165,8 +165,16 @@ void Navigator::set_viewport(double width_px, double height_px) {
     }
 }
 
+bool Navigator::in_ui_region(double x, double y) const {
+    if (!ui_region_) {
+        return false;
+    }
+    const auto& r = *ui_region_;
+    return x >= r[0] && y >= r[1] && x < r[0] + r[2] && y < r[1] + r[3];
+}
+
 std::optional<ObjectRef> Navigator::hovered(const Scene& scene) const {
-    if (cursor_x_ < 0.0 || cursor_y_ < 0.0 || drag_ != Drag::none) {
+    if (cursor_x_ < 0.0 || cursor_y_ < 0.0 || drag_ != Drag::none || in_ui_region(cursor_x_, cursor_y_)) {
         return std::nullopt;
     }
     const auto hit = pick(scene, camera(), cursor_x_, cursor_y_, viewport_width_, viewport_height_);
@@ -203,8 +211,19 @@ bool Navigator::handle(const InputEvent& event, const Scene& scene) {
     case Type::key_down:
         switch (event.key) {
         case Key::escape:
+            if (show_info_) {
+                show_info_ = false;
+                break;
+            }
+            return false;
         case Key::q:
             return false;
+        case Key::h:
+            show_hints_ = !show_hints_;
+            break;
+        case Key::i:
+            show_info_ = !show_info_;
+            break;
         case Key::f:
             if (scene.focus_ship) {
                 if (const SceneObject* ship = scene.find(*scene.focus_ship)) {
@@ -254,11 +273,13 @@ bool Navigator::handle(const InputEvent& event, const Scene& scene) {
         cursor_y_ = event.y;
         break;
     case Type::button_up:
-        if (drag_ == Drag::orbit && event.button == MouseButton::left && dragged_px_ < click_slop_px) {
+        if (drag_ == Drag::orbit && event.button == MouseButton::left && dragged_px_ < click_slop_px &&
+            !in_ui_region(event.x, event.y)) {
             // A click, not a drag: fly to what was clicked.
             if (const auto hit = pick(scene, camera(), event.x, event.y, viewport_width_, viewport_height_)) {
                 if (const SceneObject* o = scene.find(hit->ref)) {
                     camera_.focus_on(*o, std::nullopt, true);
+                    show_info_ = true;
                 }
             }
         }

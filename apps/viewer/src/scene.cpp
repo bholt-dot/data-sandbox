@@ -163,26 +163,33 @@ Scene build_scene(const ViewSnapshot& snapshot) {
                            .color = body_color(body),
                            .min_distance_m = std::max(2.0 * radius_m, 1000.0)};
         float orbit_alpha = 0.3F;
+        if (body.parent && bodies[*body.parent].kind != expanse::BodyKind::star) {
+            object.host = ObjectRef{ObjectKind::body, body.parent->index, 0};
+        }
         switch (body.kind) {
         case expanse::BodyKind::star:
+            object.cls = ObjectClass::star;
             object.min_px = 7.0F;
             object.glow = 1.0F;
             object.emissive = true;
             object.frame_distance_m = sun_frame_distance_m;
             break;
         case expanse::BodyKind::planet:
+            object.cls = ObjectClass::planet;
             object.min_px = 3.5F;
             object.glow = 0.3F;
             object.frame_distance_m = std::max(20.0 * radius_m, 2.2 * moon_system_m[id.index]);
             orbit_alpha = 0.45F;
             break;
         case expanse::BodyKind::moon:
+            object.cls = ObjectClass::moon;
             object.min_px = 1.5F;
             object.frame_distance_m = 8.0 * radius_m;
             orbit_alpha = 0.25F;
             break;
         case expanse::BodyKind::dwarf_planet:
         case expanse::BodyKind::asteroid:
+            object.cls = body.kind == expanse::BodyKind::dwarf_planet ? ObjectClass::dwarf_planet : ObjectClass::asteroid;
             object.min_px = 2.0F;
             object.frame_distance_m = 8.0 * radius_m;
             break;
@@ -209,6 +216,10 @@ Scene build_scene(const ViewSnapshot& snapshot) {
                                                 bodies[station.body].radius_km * 1000.0);
         station_limits[id.index] = limits;
         const Rgba color = faction_color(station.faction);
+        std::optional<ObjectRef> host;
+        if (bodies[station.body].kind != expanse::BodyKind::star) {
+            host = ObjectRef{ObjectKind::body, station.body.index, 0};
+        }
         scene.objects.push_back({.ref = {ObjectKind::station, id.index, 0},
                                  .key = std::string(stations.key(id)),
                                  .name = station.name,
@@ -216,6 +227,8 @@ Scene build_scene(const ViewSnapshot& snapshot) {
                                  .color = color,
                                  .min_px = 3.0F,
                                  .shape = SpriteShape::diamond,
+                                 .cls = ObjectClass::station,
+                                 .host = host,
                                  .min_distance_m = limits.min_m,
                                  .frame_distance_m = limits.frame_m});
         if (station.orbit && !orbits.is_fixed(oid)) {
@@ -234,10 +247,23 @@ Scene build_scene(const ViewSnapshot& snapshot) {
             const Rgba color = mine ? player_color : other_color;
             const Vec3 position = expanse::ship_position(content, world, ship);
             PointLimits limits;
+            std::optional<ObjectRef> host;
             if (const auto* docked = std::get_if<expanse::Docked>(&ship.location)) {
                 limits = station_limits[docked->station.index];
+                host = ObjectRef{ObjectKind::station, docked->station.index, 0};
             } else if (const auto* underway = std::get_if<expanse::Underway>(&ship.location)) {
                 scene.segments.push_back({underway->start, underway->end, with_alpha(color, 0.6F)});
+                const double dv = underway->profile.delta_v() / expanse::units::km_m;
+                scene.courses.push_back({.from = underway->start,
+                                         .to = underway->end,
+                                         .flip = flip_point(underway->start, underway->end, underway->profile),
+                                         .departure = underway->departure,
+                                         .arrival = underway->arrival,
+                                         .delta_v_km_s = dv,
+                                         .destination = stations[underway->destination].name,
+                                         .preview = false,
+                                         .feasible = true,
+                                         .color = color});
             }
             const ObjectRef ref{ObjectKind::ship, id.index, id.generation};
             scene.objects.push_back({.ref = ref,
@@ -246,6 +272,9 @@ Scene build_scene(const ViewSnapshot& snapshot) {
                                      .position = position,
                                      .color = color,
                                      .min_px = 2.5F,
+                                     .cls = ObjectClass::ship,
+                                     .player = mine,
+                                     .host = host,
                                      .min_distance_m = limits.min_m,
                                      .frame_distance_m = limits.frame_m});
             if (snapshot.hints.focus_ship == id) {
@@ -257,10 +286,33 @@ Scene build_scene(const ViewSnapshot& snapshot) {
 
     if (const auto& preview = snapshot.hints.plot_preview) {
         const Rgba color = preview->feasible() ? Rgba{1.0F, 0.80F, 0.25F, 0.85F} : Rgba{1.0F, 0.30F, 0.25F, 0.85F};
-        scene.segments.push_back({preview->plot.start, preview->plot.end, color});
+        scene.segments.push_back({preview->plot.start, preview->plot.end, color, true});
         scene.markers.push_back({.position = preview->plot.end, .color = color, .min_px = 6.0F});
+        std::string destination;
+        if (!preview->destination.is_null() && preview->destination.index < stations.size()) {
+            destination = stations[preview->destination].name;
+        }
+        scene.courses.push_back({.from = preview->plot.start,
+                                 .to = preview->plot.end,
+                                 .flip = flip_point(preview->plot.start, preview->plot.end, preview->plot.profile),
+                                 .departure = preview->departure,
+                                 .arrival = preview->arrival,
+                                 .delta_v_km_s = preview->delta_v_km_s,
+                                 .destination = std::move(destination),
+                                 .preview = true,
+                                 .feasible = preview->feasible(),
+                                 .color = color});
     }
     return scene;
+}
+
+Vec3 flip_point(const Vec3& start, const Vec3& end, const expanse::transit::BurnProfile& profile) {
+    const double length = expanse::distance(start, end);
+    if (length <= 0.0) {
+        return start;
+    }
+    const double along = expanse::transit::state_along(profile, profile.flip_time()).distance;
+    return start + (end - start) * std::clamp(along / length, 0.0, 1.0);
 }
 
 Vec3 Camera::eye() const {
@@ -439,13 +491,35 @@ void prepare_frame(const Scene& scene, const Camera& camera, float width, float 
         const std::uint32_t count = sample_orbit(o.orbit, o.parent_position, eye, focal, tolerance_px, out.line_vertices);
         out.strips.push_back({.first = first, .count = count, .uniforms = {with_alpha(o.color, o.color.a * fade)}});
     }
+    out.dashes.clear();
     for (const SceneSegment& s : scene.segments) {
         const auto first = static_cast<std::uint32_t>(out.line_vertices.size());
-        for (const Vec3& p : {s.from, s.to}) {
-            const auto v = camera_relative(p, eye);
-            out.line_vertices.push_back({v[0], v[1], v[2]});
+        if (!s.dashed) {
+            for (const Vec3& p : {s.from, s.to}) {
+                const auto v = camera_relative(p, eye);
+                out.line_vertices.push_back({v[0], v[1], v[2]});
+            }
+            out.strips.push_back({.first = first, .count = 2, .uniforms = {s.color}});
+            continue;
         }
-        out.strips.push_back({.first = first, .count = 2, .uniforms = {s.color}});
+        // Dashes of equal length along the line, about dash_px on screen at the line's nearer
+        // end (perspective shortens the far ones, like a painted road).
+        constexpr double dash_px = 14.0;
+        constexpr std::uint32_t max_dashes = 400;
+        const double length = expanse::distance(s.from, s.to);
+        const double nearest =
+            std::max(std::min(expanse::distance(s.from, eye), expanse::distance(s.to, eye)), camera.near_m);
+        const double screen_px = length / nearest * focal;
+        const auto dashes = static_cast<std::uint32_t>(std::clamp(screen_px / dash_px, 1.0, double{max_dashes}));
+        for (std::uint32_t i = 0; i < dashes; ++i) {
+            const double t0 = static_cast<double>(i) / static_cast<double>(dashes);
+            const double t1 = (static_cast<double>(i) + 0.6) / static_cast<double>(dashes);
+            for (const double t : {t0, t1}) {
+                const auto v = camera_relative(s.from + (s.to - s.from) * t, eye);
+                out.line_vertices.push_back({v[0], v[1], v[2]});
+            }
+        }
+        out.dashes.push_back({.first = first, .count = 2 * dashes, .uniforms = {s.color}});
     }
 }
 

@@ -64,6 +64,40 @@ if(SIM_VIEWER)
     FetchContent_MakeAvailable(SDL3)
   endif()
 
+  # SDL3_ttf for the viewer's labels and panels (its GPU text engine fills a glyph atlas; our
+  # own pipeline draws it). A system package (Arch: `pacman -S sdl3_ttf`) is preferred; otherwise
+  # a pinned static build with its vendored FreeType only: no HarfBuzz (Latin labels need no
+  # complex shaping) and no plutosvg (no colour emoji), so no further system dependencies.
+  # A system SDL3_ttf links the system SDL3, so it is only taken together with it.
+  if(SDL3_FOUND)
+    find_package(SDL3_ttf 3.2.0 CONFIG QUIET)
+  endif()
+  if(SDL3_ttf_FOUND)
+    message(STATUS "SIM_VIEWER: using system SDL3_ttf ${SDL3_ttf_VERSION}")
+  else()
+    message(STATUS "SIM_VIEWER: system SDL3_ttf >= 3.2 not found; fetching release-3.2.2")
+    # SDL_ttf declares CMAKE_POSITION_INDEPENDENT_CODE as a cache option (default ON), which
+    # would switch every target to PIC from the next configure on; pin the toolchain default.
+    if(NOT DEFINED CACHE{CMAKE_POSITION_INDEPENDENT_CODE})
+      set(CMAKE_POSITION_INDEPENDENT_CODE OFF CACHE BOOL "Build static libraries with -fPIC")
+    endif()
+    set(saved_build_shared_libs "${BUILD_SHARED_LIBS}")
+    set(BUILD_SHARED_LIBS OFF)
+    set(SDLTTF_VENDORED ON CACHE BOOL "" FORCE)
+    set(SDLTTF_HARFBUZZ OFF CACHE BOOL "" FORCE)
+    set(SDLTTF_PLUTOSVG OFF CACHE BOOL "" FORCE)
+    set(SDLTTF_SAMPLES OFF CACHE BOOL "" FORCE)
+    set(SDLTTF_INSTALL OFF CACHE BOOL "" FORCE)
+    FetchContent_Declare(SDL3_ttf
+      GIT_REPOSITORY https://github.com/libsdl-org/SDL_ttf.git
+      GIT_TAG        release-3.2.2
+      GIT_SHALLOW    TRUE
+      GIT_SUBMODULES external/freetype
+      SYSTEM)
+    FetchContent_MakeAvailable(SDL3_ttf)
+    set(BUILD_SHARED_LIBS "${saved_build_shared_libs}")
+  endif()
+
   find_program(GLSLANG_VALIDATOR glslangValidator)
   if(NOT GLSLANG_VALIDATOR)
     message(FATAL_ERROR "SIM_VIEWER needs glslangValidator to compile shaders "

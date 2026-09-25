@@ -2,6 +2,7 @@
 #   belter_viewer_core  snapshot handoff + scene building; plain C++, no SDL (unit-testable anywhere)
 #   belter_viewer       the SDL3 GPU window and renderer, with SPIR-V shaders embedded
 include(Shaders)
+include(Embed)
 
 add_library(belter_viewer_core STATIC
   src/viewer_link.cpp
@@ -9,6 +10,8 @@ add_library(belter_viewer_core STATIC
   src/scene.cpp
   src/nav.cpp
   src/pick.cpp
+  src/info.cpp
+  src/overlay.cpp
 )
 target_include_directories(belter_viewer_core PUBLIC include PRIVATE src)
 target_link_libraries(belter_viewer_core PUBLIC sim::expanse Threads::Threads)
@@ -18,10 +21,11 @@ add_library(belter_viewer STATIC
   src/gpu.cpp
   src/module_pins.cpp
   src/renderer.cpp
+  src/text.cpp
   src/viewer.cpp
 )
 target_include_directories(belter_viewer PUBLIC include PRIVATE src)
-target_link_libraries(belter_viewer PUBLIC belter_viewer_core PRIVATE SDL3::SDL3 ${CMAKE_DL_LIBS})
+target_link_libraries(belter_viewer PUBLIC belter_viewer_core PRIVATE SDL3_ttf::SDL3_ttf SDL3::SDL3 ${CMAKE_DL_LIBS})
 sim_configure_target(belter_viewer)
 sim_add_spirv_shaders(belter_viewer NAMESPACE viewer SHADERS
   shaders/sphere.vert
@@ -30,7 +34,11 @@ sim_add_spirv_shaders(belter_viewer NAMESPACE viewer SHADERS
   shaders/sprite.frag
   shaders/line.vert
   shaders/line.frag
+  shaders/overlay.vert
+  shaders/overlay.frag
 )
+# Fira Sans (SIL Open Font License 1.1, assets/fonts/OFL.txt) for labels and panels.
+sim_embed_files(belter_viewer NAMESPACE viewer FILES assets/fonts/FiraSans-Medium.ttf)
 
 add_executable(belter-view main.cpp)
 target_link_libraries(belter-view PRIVATE belter_viewer)
@@ -40,6 +48,7 @@ target_compile_definitions(belter-view PRIVATE BELTER_DEFAULT_DATA_DIR="${PROJEC
 if(SIM_BUILD_TESTS)
   sim_add_test(viewer_tests
     SOURCES tests/main.cpp tests/viewer_link_tests.cpp tests/scene_tests.cpp tests/nav_tests.cpp
+            tests/overlay_tests.cpp
     LIBS belter_viewer_core)
   target_include_directories(viewer_tests PRIVATE src)
   target_compile_definitions(viewer_tests PRIVATE BELTER_DATA_DIR="${PROJECT_SOURCE_DIR}/data")
@@ -87,6 +96,23 @@ if(SIM_BUILD_TESTS)
     FIXTURES_SETUP viewer_cluster_png)
   add_test(NAME viewer_screenshot_cluster_check COMMAND check_screenshot ${cluster_png} 640 360 cluster)
   set_tests_properties(viewer_screenshot_cluster_check PROPERTIES FIXTURES_REQUIRED viewer_cluster_png)
+
+  # The overlay at 1280x720 (text needs the room): the labelled system view, a station's info
+  # panel and a plotted course with its flip marker. The same shots are docs/screenshots/
+  # labels-system.png, info-station.png and plot-preview.png.
+  function(viewer_overlay_shot name mode)
+    set(png "${CMAKE_CURRENT_BINARY_DIR}/screenshot_${name}.png")
+    add_test(NAME viewer_screenshot_${name}
+             COMMAND belter-view --size 1280x720 --frames 3 ${ARGN} --screenshot ${png})
+    set_tests_properties(viewer_screenshot_${name} PROPERTIES
+      ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen"
+      FIXTURES_SETUP viewer_${name}_png)
+    add_test(NAME viewer_screenshot_${name}_check COMMAND check_screenshot ${png} 1280 720 ${mode})
+    set_tests_properties(viewer_screenshot_${name}_check PROPERTIES FIXTURES_REQUIRED viewer_${name}_png)
+  endfunction()
+  viewer_overlay_shot(labels labels)
+  viewer_overlay_shot(info info --focus ceres_station --info)
+  viewer_overlay_shot(plot plot --plot mars_highport --focus earth --distance-au 5.5 --pitch 80)
 
   # The shell's pattern: a second thread advances the game and publishes while the window renders.
   add_test(NAME viewer_animate_offscreen COMMAND belter-view --size 320x180 --animate 200 --frames 40)

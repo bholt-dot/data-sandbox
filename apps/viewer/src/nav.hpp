@@ -91,6 +91,8 @@ enum class Key : std::uint8_t {
     minus,
     escape,
     q,
+    h,
+    i,
 };
 
 enum class MouseButton : std::uint8_t { left, middle, right };
@@ -119,9 +121,9 @@ inline constexpr std::array<Bookmark, 9> bookmarks{{
 }};
 
 inline constexpr std::string_view controls_help_text =
-    "left-drag orbit | click focus | shift/right-drag pan | wheel or +/- zoom | F player ship | Home Sun | "
-    "1-9 Earth Luna Mars Ceres Vesta Jupiter Ganymede Saturn Titan | Tab/Shift+Tab stations | "
-    "[ ] ships | R reset | Esc/Q close";
+    "left-drag orbit | click focus + info panel | shift/right-drag pan | wheel or +/- zoom | F player ship | "
+    "Home Sun | 1-9 Earth Luna Mars Ceres Vesta Jupiter Ganymede Saturn Titan | Tab/Shift+Tab stations | "
+    "[ ] ships | I info panel | H hotkey hints | R reset | Esc close panel, then window | Q close";
 
 // Maps input events to camera actions against the current scene.
 class Navigator {
@@ -136,6 +138,16 @@ public:
 
     // The object under the cursor (see pick.hpp), for hover feedback.
     std::optional<ObjectRef> hovered(const Scene& scene) const;
+    double cursor_x() const { return cursor_x_; }
+    double cursor_y() const { return cursor_y_; }
+
+    // Overlay toggles: the hotkey hint line (H) and the info panel for the focus (I; a click on
+    // an object opens it, Esc closes it before it closes the window).
+    bool show_hints() const { return show_hints_; }
+    bool show_info() const { return show_info_; }
+    void set_show_info(bool show) { show_info_ = show; }
+    // A screen region taken by the overlay (the info panel): no hover or click-to-focus there.
+    void set_ui_region(std::optional<std::array<double, 4>> xywh) { ui_region_ = xywh; }
 
     OrbitCamera& orbit_camera() { return camera_; }
     const OrbitCamera& orbit_camera() const { return camera_; }
@@ -156,6 +168,11 @@ private:
     double cursor_y_ = -1.0;
     double viewport_width_ = 1280.0;
     double viewport_height_ = 720.0;
+    bool in_ui_region(double x, double y) const;
+
+    std::optional<std::array<double, 4>> ui_region_;
+    bool show_hints_ = true;
+    bool show_info_ = false;
 };
 
 } // namespace viewer

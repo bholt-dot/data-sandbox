@@ -282,3 +282,46 @@ TEST_CASE("a click focuses the object under the cursor and a drag does not") {
     nav.handle({.type = Type::button_up, .x = 3.0, .y = 3.0}, scene);
     CHECK(focus_of(nav) == mars->ref);
 }
+
+TEST_CASE("H toggles the hints and I and a click open the info panel which Esc closes first") {
+    const Scene& scene = start_scene();
+    const SceneObject* mars = scene.find_key("mars");
+    REQUIRE(mars != nullptr);
+    Navigator nav;
+    nav.set_viewport(1280.0, 720.0);
+    nav.orbit_camera().reset(scene, false);
+    nav.update(0.0, scene);
+
+    CHECK(nav.show_hints());
+    nav.handle(key(Key::h), scene);
+    CHECK_FALSE(nav.show_hints());
+    nav.handle(key(Key::h), scene);
+    CHECK(nav.show_hints());
+
+    CHECK_FALSE(nav.show_info());
+    nav.handle(key(Key::i), scene);
+    CHECK(nav.show_info());
+    CHECK(nav.handle(key(Key::escape), scene)); // closes the panel, not the window
+    CHECK_FALSE(nav.show_info());
+
+    const auto px = project_to_pixels(nav.camera(), mars->position, 1280.0, 720.0);
+    REQUIRE(px.has_value());
+    using Type = InputEvent::Type;
+    // Over the info panel neither hover nor click reach the scene.
+    nav.set_ui_region(std::array{(*px)[0] - 20.0, (*px)[1] - 20.0, 40.0, 40.0});
+    nav.handle({.type = Type::motion, .x = (*px)[0], .y = (*px)[1]}, scene);
+    CHECK_FALSE(nav.hovered(scene).has_value());
+    nav.handle({.type = Type::button_down, .x = (*px)[0], .y = (*px)[1]}, scene);
+    nav.handle({.type = Type::button_up, .x = (*px)[0], .y = (*px)[1]}, scene);
+    CHECK(focus_of(nav) != mars->ref);
+    CHECK_FALSE(nav.show_info());
+
+    nav.set_ui_region(std::nullopt);
+    nav.handle({.type = Type::button_down, .x = (*px)[0], .y = (*px)[1]}, scene);
+    nav.handle({.type = Type::button_up, .x = (*px)[0], .y = (*px)[1]}, scene);
+    CHECK(focus_of(nav) == mars->ref);
+    CHECK(nav.show_info());
+    CHECK(nav.handle(key(Key::escape), scene));
+    CHECK_FALSE(nav.show_info());
+    CHECK_FALSE(nav.handle(key(Key::escape), scene)); // no panel: Esc closes the window
+}
