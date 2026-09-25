@@ -7,6 +7,8 @@ add_library(belter_viewer_core STATIC
   src/viewer_link.cpp
   src/view_snapshot.cpp
   src/scene.cpp
+  src/nav.cpp
+  src/pick.cpp
 )
 target_include_directories(belter_viewer_core PUBLIC include PRIVATE src)
 target_link_libraries(belter_viewer_core PUBLIC sim::expanse Threads::Threads)
@@ -22,6 +24,8 @@ target_include_directories(belter_viewer PUBLIC include PRIVATE src)
 target_link_libraries(belter_viewer PUBLIC belter_viewer_core PRIVATE SDL3::SDL3 ${CMAKE_DL_LIBS})
 sim_configure_target(belter_viewer)
 sim_add_spirv_shaders(belter_viewer NAMESPACE viewer SHADERS
+  shaders/sphere.vert
+  shaders/sphere.frag
   shaders/sprite.vert
   shaders/sprite.frag
   shaders/line.vert
@@ -35,7 +39,7 @@ target_compile_definitions(belter-view PRIVATE BELTER_DEFAULT_DATA_DIR="${PROJEC
 
 if(SIM_BUILD_TESTS)
   sim_add_test(viewer_tests
-    SOURCES tests/main.cpp tests/viewer_link_tests.cpp tests/scene_tests.cpp
+    SOURCES tests/main.cpp tests/viewer_link_tests.cpp tests/scene_tests.cpp tests/nav_tests.cpp
     LIBS belter_viewer_core)
   target_include_directories(viewer_tests PRIVATE src)
   target_compile_definitions(viewer_tests PRIVATE BELTER_DATA_DIR="${PROJECT_SOURCE_DIR}/data")
@@ -59,8 +63,30 @@ if(SIM_BUILD_TESTS)
     ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen"
     FIXTURES_SETUP viewer_offscreen_png)
   add_test(NAME viewer_screenshot_offscreen_check
-           COMMAND check_screenshot ${offscreen_png} 640 360)
+           COMMAND check_screenshot ${offscreen_png} 640 360 system)
   set_tests_properties(viewer_screenshot_offscreen_check PROPERTIES FIXTURES_REQUIRED viewer_offscreen_png)
+
+  # Close-ups through --focus: a planet as a lit sphere (day and night side), and the Ceres
+  # cluster with the player's ship.
+  set(planet_png "${CMAKE_CURRENT_BINARY_DIR}/screenshot_planet.png")
+  add_test(NAME viewer_screenshot_planet
+           COMMAND belter-view ${shot_args} --focus earth --distance-au 0.00016 --pitch 20
+                   --screenshot ${planet_png})
+  set_tests_properties(viewer_screenshot_planet PROPERTIES
+    ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen"
+    FIXTURES_SETUP viewer_planet_png)
+  add_test(NAME viewer_screenshot_planet_check COMMAND check_screenshot ${planet_png} 640 360 sphere)
+  set_tests_properties(viewer_screenshot_planet_check PROPERTIES FIXTURES_REQUIRED viewer_planet_png)
+
+  set(cluster_png "${CMAKE_CURRENT_BINARY_DIR}/screenshot_cluster.png")
+  add_test(NAME viewer_screenshot_cluster
+           COMMAND belter-view ${shot_args} --focus ceres_station --distance-au 0.8 --pitch 40
+                   --screenshot ${cluster_png})
+  set_tests_properties(viewer_screenshot_cluster PROPERTIES
+    ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen"
+    FIXTURES_SETUP viewer_cluster_png)
+  add_test(NAME viewer_screenshot_cluster_check COMMAND check_screenshot ${cluster_png} 640 360 cluster)
+  set_tests_properties(viewer_screenshot_cluster_check PROPERTIES FIXTURES_REQUIRED viewer_cluster_png)
 
   # The shell's pattern: a second thread advances the game and publishes while the window renders.
   add_test(NAME viewer_animate_offscreen COMMAND belter-view --size 320x180 --animate 200 --frames 40)

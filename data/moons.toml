@@ -32,6 +32,7 @@ kind = "moon"
 parent = "earth"
 gm_km3_s2 = 4902.8
 radius_km = 1737
+color = "#a8a6a2"
 orbit = { a_km = 384400, e = 0.0549, i_deg = 5.145, node_deg = 125.08, peri_deg = 318.15, mean_anomaly_deg = 135.27 }
 
 # ---- Mars -------------------------------------------------------------------------------------
@@ -60,6 +61,7 @@ kind = "moon"
 parent = "jupiter"
 gm_km3_s2 = 5959.916
 radius_km = 1821.5
+color = "#e3cf62"
 orbit = { a_km = 421800, e = 0.0041, i_deg = 2.21, node_deg = 336.90, peri_deg = 69.44, mean_anomaly_deg = 331.97 }
 
 [body.europa]
@@ -68,6 +70,7 @@ kind = "moon"
 parent = "jupiter"
 gm_km3_s2 = 3202.739
 radius_km = 1560.8
+color = "#cfc2a6"
 orbit = { a_km = 671100, e = 0.0096, i_deg = 1.79, node_deg = 332.65, peri_deg = 252.99, mean_anomaly_deg = 347.09 }
 
 [body.ganymede]
@@ -76,6 +79,7 @@ kind = "moon"
 parent = "jupiter"
 gm_km3_s2 = 9887.834
 radius_km = 2631.2
+color = "#9d948a"
 orbit = { a_km = 1070400, e = 0.0015, i_deg = 2.21, node_deg = 343.21, peri_deg = 316.51, mean_anomaly_deg = 280.36 }
 
 [body.callisto]
@@ -84,6 +88,7 @@ kind = "moon"
 parent = "jupiter"
 gm_km3_s2 = 7179.289
 radius_km = 2410.3
+color = "#71685e"
 orbit = { a_km = 1882700, e = 0.0074, i_deg = 2.02, node_deg = 338.14, peri_deg = 15.95, mean_anomaly_deg = 85.11 }
 
 # ---- Saturn -----------------------------------------------------------------------------------
@@ -94,6 +99,7 @@ kind = "moon"
 parent = "saturn"
 gm_km3_s2 = 7.2103
 radius_km = 252.1
+color = "#f0f2f4"
 orbit = { a_km = 237948, e = 0.0049, i_deg = 28.09, node_deg = 169.40, peri_deg = 131.41, mean_anomaly_deg = 11.05 }
 
 [body.rhea]
@@ -110,6 +116,7 @@ kind = "moon"
 parent = "saturn"
 gm_km3_s2 = 8978.1382
 radius_km = 2574.7
+color = "#d8a24a"
 orbit = { a_km = 1221870, e = 0.0288, i_deg = 27.72, node_deg = 169.23, peri_deg = 163.78, mean_anomaly_deg = 164.15 }
 
 # Phoebe: irregular, retrograde. JPL Horizons osculating elements (epoch 2026-05-12, as shipped

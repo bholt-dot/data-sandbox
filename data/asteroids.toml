@@ -19,6 +19,7 @@ kind = "dwarf_planet"
 parent = "sun"
 gm_km3_s2 = 62.6284
 radius_km = 469.7
+color = "#8c8882"
 # [A]; M_J2000 = 6.840 ([B] gives 5.253)
 orbit = { a_au = 2.7659565, e = 0.0797602, i_deg = 10.58671, node_deg = 80.40696, peri_deg = 73.15069, mean_anomaly_deg = 6.840 }
 
@@ -46,6 +47,7 @@ kind = "asteroid"
 parent = "sun"
 gm_km3_s2 = 17.288
 radius_km = 262.7
+color = "#a39c90"
 # [A]; M_J2000 = 340.580 ([B] gives 338.808)
 orbit = { a_au = 2.3619563, e = 0.0893657, i_deg = 7.13380, node_deg = 103.91841, peri_deg = 150.18003, mean_anomaly_deg = 340.580 }
 

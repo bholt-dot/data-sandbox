@@ -45,6 +45,9 @@ void BodyDef::describe(sim::Schema<BodyDef>& s) {
     s.optional("gm_km3_s2", &BodyDef::gm_km3_s2).min(0.0);
     s.field("radius_km", &BodyDef::radius_km).min(0.0);
     s.field("orbit", &BodyDef::orbit);
+    s.field("color", &BodyDef::color).check([](const std::string& c) {
+        return parse_hex_color(c) ? std::string{} : "must be a colour like \"#c1440e\"";
+    });
     s.check([](const BodyDef& b) {
         const bool star = b.kind == BodyKind::star;
         if (star && (b.parent || b.orbit)) {
@@ -55,6 +58,27 @@ void BodyDef::describe(sim::Schema<BodyDef>& s) {
         }
         return std::string{};
     });
+}
+
+std::optional<std::uint32_t> parse_hex_color(std::string_view text) {
+    if (text.size() != 7 || text[0] != '#') {
+        return std::nullopt;
+    }
+    std::uint32_t value = 0;
+    for (const char ch : text.substr(1)) {
+        std::uint32_t digit = 0;
+        if (ch >= '0' && ch <= '9') {
+            digit = static_cast<std::uint32_t>(ch - '0');
+        } else if (ch >= 'a' && ch <= 'f') {
+            digit = static_cast<std::uint32_t>(ch - 'a' + 10);
+        } else if (ch >= 'A' && ch <= 'F') {
+            digit = static_cast<std::uint32_t>(ch - 'A' + 10);
+        } else {
+            return std::nullopt;
+        }
+        value = value * 16 + digit;
+    }
+    return value;
 }
 
 void MarketEntryDef::describe(sim::Schema<MarketEntryDef>& s) {

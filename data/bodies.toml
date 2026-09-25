@@ -19,6 +19,7 @@ name = "Sol"
 kind = "star"
 gm_km3_s2 = 1.32712440018e11
 radius_km = 695700
+color = "#ffe7b0"
 
 [body.mercury]
 name = "Mercury"
@@ -26,6 +27,7 @@ kind = "planet"
 parent = "sun"
 gm_km3_s2 = 22031.868551
 radius_km = 2439.4
+color = "#9a948c"
 orbit = { a_au = 0.38709927, e = 0.20563593, i_deg = 7.00497902, node_deg = 48.33076593, peri_deg = 29.12703035, mean_anomaly_deg = 174.79252722 }
 
 [body.venus]
@@ -34,6 +36,7 @@ kind = "planet"
 parent = "sun"
 gm_km3_s2 = 324858.592
 radius_km = 6051.8
+color = "#e6d3a3"
 orbit = { a_au = 0.72333566, e = 0.00677672, i_deg = 3.39467605, node_deg = 76.67984255, peri_deg = 54.92262463, mean_anomaly_deg = 50.37663232 }
 
 [body.earth]
@@ -42,6 +45,7 @@ kind = "planet"
 parent = "sun"
 gm_km3_s2 = 398600.4418
 radius_km = 6371
+color = "#5f8fd8"
 orbit = { a_au = 1.00000261, e = 0.01671123, i_deg = -0.00001531, node_deg = 0.0, peri_deg = 102.93768193, mean_anomaly_deg = -2.47311027 }
 
 [body.mars]
@@ -50,6 +54,7 @@ kind = "planet"
 parent = "sun"
 gm_km3_s2 = 42828.37
 radius_km = 3389.5
+color = "#c1440e"
 orbit = { a_au = 1.52371034, e = 0.09339410, i_deg = 1.84969142, node_deg = 49.55953891, peri_deg = -73.5031685, mean_anomaly_deg = 19.39019754 }
 
 [body.jupiter]
@@ -58,6 +63,7 @@ kind = "planet"
 parent = "sun"
 gm_km3_s2 = 1.26686534e8
 radius_km = 69911
+color = "#d8b58c"
 orbit = { a_au = 5.20288700, e = 0.04838624, i_deg = 1.30439695, node_deg = 100.47390909, peri_deg = -85.74542926, mean_anomaly_deg = 19.66796068 }
 
 [body.saturn]
@@ -66,6 +72,7 @@ kind = "planet"
 parent = "sun"
 gm_km3_s2 = 37931206.234
 radius_km = 58232
+color = "#e3cf9c"
 orbit = { a_au = 9.53667594, e = 0.05386179, i_deg = 2.48599187, node_deg = 113.66242448, peri_deg = -21.06354617, mean_anomaly_deg = -42.64463408 }
 
 [body.uranus]
@@ -74,6 +81,7 @@ kind = "planet"
 parent = "sun"
 gm_km3_s2 = 5793951.256
 radius_km = 25362
+color = "#a6dbe2"
 orbit = { a_au = 19.18916464, e = 0.04725744, i_deg = 0.77263783, node_deg = 74.01692503, peri_deg = 96.93735127, mean_anomaly_deg = 142.28382821 }
 
 [body.neptune]
@@ -82,4 +90,5 @@ kind = "planet"
 parent = "sun"
 gm_km3_s2 = 6835099.97
 radius_km = 24622
+color = "#5a7fdc"
 orbit = { a_au = 30.06992276, e = 0.00859048, i_deg = 1.77004347, node_deg = 131.78422574, peri_deg = -86.81946347, mean_anomaly_deg = -100.08479196 }
