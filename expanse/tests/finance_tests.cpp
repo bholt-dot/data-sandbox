@@ -2,6 +2,7 @@
 
 #include "expanse/content.hpp"
 #include "expanse/finance.hpp"
+#include "expanse/ships.hpp"
 #include "expanse/scenario.hpp"
 #include "expanse/simulation.hpp"
 #include "expanse/world.hpp"
@@ -174,6 +175,11 @@ TEST_CASE("broke captains run a dock tab that blocks departure") {
     CHECK_FALSE(blocked.allowed);
     CHECK(blocked.reason.find("dockmaster") != std::string::npos);
     CHECK(cash(w) == 0);
+    // Ship operations enforce it: the ship can't undock.
+    const DepartResult d = depart(c, w, ship, c.find<StationDef>("vesta_dock"), {});
+    CHECK(d.status == CourseStatus::dock_fees_owed);
+    CHECK(d.reason == blocked.reason);
+    CHECK(std::holds_alternative<Docked>(w.ships.at(ship).location));
 
     // Income arrives; paying the tab restores clearance.
     REQUIRE(transact(w, w.player, 1000, LedgerCategory::contract, "odd job"));
