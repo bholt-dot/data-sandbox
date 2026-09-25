@@ -8,6 +8,7 @@
 #include "expanse/ships.hpp"
 #include "expanse/simulation.hpp"
 #include "expanse/units.hpp"
+#include "simcore/text.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -380,7 +381,7 @@ void register_game_commands(ShellBus& bus, std::shared_ptr<const Content> conten
             s.messages_seen = 0;
             const ScenarioDef& sc = s.content->table<ScenarioDef>()[s.content->find<ScenarioDef>(k)];
             out.heading(std::format("== {} ==", sc.name));
-            out << sc.description << "\n\n";
+            out << sim::reflow(sc.description) << "\n\n";
             out << calendar::format_datetime(s.world->now()) << " — type '" << key("status")
                 << "' to look around.\n";
         });

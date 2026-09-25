@@ -30,4 +30,27 @@ std::size_t edit_distance(std::string_view a, std::string_view b) {
     return prev[b.size()];
 }
 
+std::string reflow(std::string_view text) {
+    std::string out;
+    std::string_view rest = text;
+    bool pending_break = false; // a blank line was seen since the last word
+    while (!rest.empty()) {
+        const std::size_t nl = rest.find('\n');
+        std::string_view line = rest.substr(0, nl);
+        rest = nl == std::string_view::npos ? std::string_view{} : rest.substr(nl + 1);
+        const auto first = line.find_first_not_of(" \t\r");
+        if (first == std::string_view::npos) {
+            pending_break = !out.empty();
+            continue;
+        }
+        line = line.substr(first, line.find_last_not_of(" \t\r") - first + 1);
+        if (!out.empty()) {
+            out += pending_break ? "\n\n" : " ";
+        }
+        out += line;
+        pending_break = false;
+    }
+    return out;
+}
+
 } // namespace sim

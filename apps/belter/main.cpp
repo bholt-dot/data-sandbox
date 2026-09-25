@@ -27,11 +27,13 @@
 namespace {
 
 constexpr std::string_view usage = R"(usage: belter [--data DIR] [--script FILE] [--echo] [--plain] [--view]
+              [--color auto|always|never]
 
   --data DIR     game data directory (default: the source tree's data/)
   --script FILE  run commands from FILE and exit (stops at the first error)
   --echo         with --script: echo each command before its output
   --plain        line-by-line shell instead of the full-screen interface
+  --color WHEN   auto (default: colour on a terminal unless NO_COLOR is set), always, never
   --view         also open the 3D system viewer window (builds with SIM_VIEWER=ON); the shell
                  keeps working as usual and the window follows each command. With --script the
                  window stays open after the script until you close it.
@@ -47,6 +49,7 @@ struct Args {
     std::string script;
     bool echo = false;
     bool plain = false;
+    std::string color = "auto";
     bool view = false;
     std::string screenshot;
 };
@@ -67,6 +70,11 @@ bool parse_args(std::span<char*> argv, Args& args) {
             args.echo = true;
         } else if (a == "--plain") {
             args.plain = true;
+        } else if (a == "--color") {
+            const char* v = value();
+            if (v == nullptr) return false;
+            args.color = v;
+            if (args.color != "auto" && args.color != "always" && args.color != "never") return false;
         } else if (a == "--view") {
             args.view = true;
         } else if (a == "--screenshot") {
@@ -80,6 +88,18 @@ bool parse_args(std::span<char*> argv, Args& args) {
     return true;
 }
 
+// The escape codes to use for `is_terminal` output. --color overrides detection and NO_COLOR
+// (per no-color.org, an explicit flag wins over the environment).
+sim::Ansi ansi_mode(const Args& args, bool is_terminal) {
+    if (args.color == "always") {
+        return sim::Ansi::color;
+    }
+    if (args.color == "never") {
+        return is_terminal ? sim::Ansi::mono : sim::Ansi::none;
+    }
+    return is_terminal ? sim::ansi_for_terminal(true) : sim::Ansi::none;
+}
+
 // Runs the shell in the mode the arguments and terminal call for; returns the exit code.
 int run_shell(const Args& args, expanse::ShellBus& bus, expanse::Session& session) {
     if (!args.script.empty()) {
@@ -89,13 +109,14 @@ int run_shell(const Args& args, expanse::ShellBus& bus, expanse::Session& sessio
             return 1;
         }
         sim::StreamLineReader reader(file, args.script, args.echo ? &std::cout : nullptr);
-        return sim::run_repl(bus, session, reader, std::cout, {.prompt = "> ", .stop_on_error = true});
+        return sim::run_repl(bus, session, reader, std::cout,
+                             {.prompt = "> ", .stop_on_error = true, .ansi = ansi_mode(args, false)});
     }
 
 #if SIM_HAVE_TUI
     // Full screen only for a person at a capable terminal.
     if (!args.plain && sim::is_interactive_terminal() && sim::ansi_for_terminal(true) != sim::Ansi::none) {
-        belter::Tui tui(bus, session, {.color = !sim::no_color_requested()});
+        belter::Tui tui(bus, session, {.color = ansi_mode(args, true) == sim::Ansi::color});
         return tui.run();
     }
 #endif
@@ -110,7 +131,7 @@ int run_shell(const Args& args, expanse::ShellBus& bus, expanse::Session& sessio
         std::cout << "BELTER — a hard-SF trading sim. 'new' starts a game, 'help' lists commands.\n";
     }
     // Colour only when a person is at the terminal; piped sessions stay plain text.
-    const sim::Ansi ansi = terminal ? sim::ansi_for_terminal(true) : sim::Ansi::none;
+    const sim::Ansi ansi = ansi_mode(args, terminal != nullptr);
     return sim::run_repl(bus, session, reader, std::cout, {.ansi = ansi});
 }
 

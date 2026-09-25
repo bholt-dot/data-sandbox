@@ -25,4 +25,5 @@ sim_add_test(simcore_tests
     tests/defs_tests.cpp
     tests/command_tests.cpp
     tests/doc_tests.cpp
+    tests/text_tests.cpp
   LIBS sim::core)
