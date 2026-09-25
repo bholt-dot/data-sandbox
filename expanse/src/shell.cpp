@@ -284,7 +284,7 @@ std::optional<StatusBanner> status_banner(const Session& s) {
         b.loan = StatusBanner::LoanStatus{
             .lender = c.table<StationDef>()[loan.lender].name,
             .balance = loan.balance,
-            .instalment = std::max<Credits>(0, loan.weekly_payment - loan.paid_since_due),
+            .instalment = instalment_outstanding(loan),
             .due = loan.next_due,
             .until_due = loan.next_due - w.now(),
             .missed = loan.missed_payments,
@@ -493,8 +493,13 @@ void register_game_commands(ShellBus& bus, std::shared_ptr<const Content> conten
                 sim::Line text(std::vector<sim::Span>{
                     money(loan.balance),
                     {std::format(" owed to {}, ", c.table<StationDef>()[loan.lender].name), Style::plain},
-                    money(loan.weekly_payment),
+                    money(instalment_outstanding(loan)),
                     {std::format(" due {}", calendar::format_date(loan.next_due)), Style::plain}});
+                if (interest_only(loan)) {
+                    text.append({std::format(" (interest only; {} from {})", format_credits(loan.weekly_payment),
+                                             calendar::format_date(first_regular_due(loan))),
+                                 Style::dim});
+                }
                 if (loan.missed_payments > 0) {
                     text.append({" ", Style::plain});
                     text.append(styled(Style::urgent, std::format("({} missed!)", loan.missed_payments)));

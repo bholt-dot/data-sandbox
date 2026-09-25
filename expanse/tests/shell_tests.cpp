@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include "expanse/finance.hpp"
 #include "expanse/shell.hpp"
 
 #include <memory>
@@ -124,7 +125,9 @@ TEST_CASE("shell output is styled and tabular") {
     REQUIRE(sh.bus.execute_line("plot vesta_dock --within 25d", sh.session, plot).ok());
     CHECK(spans_of(plot, sim::Style::good) == std::vector<std::string>{"GO"});
 
-    // A missed instalment is urgent everywhere it shows.
+    // A missed instalment is urgent everywhere it shows (spend the cash so the first one is missed).
+    World& w = *sh.session.world;
+    REQUIRE(transact(w, w.player, -w.companies.at(w.player).cash, LedgerCategory::other, "drank it"));
     sim::Doc advance;
     sh.bus.execute_line("advance 8d --force", sh.session, advance);
     CHECK_FALSE(spans_of(advance, sim::Style::urgent).empty());
@@ -141,7 +144,7 @@ TEST_CASE("status banner summarizes the player's position") {
     REQUIRE(b.has_value());
     CHECK(b->cash == 1850);
     REQUIRE(b->loan.has_value());
-    CHECK(b->loan->instalment == 4200);
+    CHECK(b->loan->instalment == 360); // interest only for the first weeks
     CHECK(b->loan->until_due == sim::days(7));
     CHECK(b->loan->missed == 0);
     REQUIRE(b->ship.has_value());
@@ -155,13 +158,14 @@ TEST_CASE("status banner summarizes the player's position") {
     for (const sim::Line& seg : banner_segments(*b)) {
         text += seg.text() + " | ";
     }
-    CHECK(text == "2350-03-14 00:00 | Cash 1,850 cr | Loan 4,200 cr due 03-21 in 7d 0h | "
+    CHECK(text == "2350-03-14 00:00 | Cash 1,850 cr | Loan 360 cr due 03-21 in 7d 0h | "
                   "Dustkicker docked at Ceres Station | RM 35% | Hull 62% | Crew 1/4 | ");
 
-    sh.run("pay 1000");
+    sh.run("pay 200");
     sh.run("go hollow_nail");
     b = status_banner(sh.session);
-    CHECK(b->loan->instalment == 3200);
+    // Voluntary payments count toward the next instalment (and shave a credit off its interest).
+    CHECK(b->loan->instalment == 159);
     CHECK_FALSE(b->ship->docked_at.has_value());
     CHECK(b->ship->destination == "Hollow Nail");
     CHECK(b->ship->remaining > sim::Duration{});
@@ -172,4 +176,13 @@ TEST_CASE("journal lines mark urgent entries") {
     CHECK(journal_line(m).text() == "  [2350-03-14 00:00] finance ! Missed a payment");
     CHECK(journal_line(m, true).text() == "03-14 00:00 ! Missed a payment");
     CHECK(journal_line(m).spans.back().style == sim::Style::urgent);
+}
+
+TEST_CASE("status shows the interest only instalment actually due") {
+    Shell sh;
+    sh.run("new secondhand --seed 3");
+    const std::string st = sh.run("status");
+    CHECK(contains(st, "360 cr due"));
+    CHECK(contains(st, "interest only"));
+    CHECK(contains(st, "1,000 cr from"));
 }

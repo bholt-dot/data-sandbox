@@ -11,6 +11,7 @@
 
 #include "doc_view.hpp"
 #include "expanse/content.hpp"
+#include "expanse/finance.hpp"
 #include "expanse/shell.hpp"
 #include "tui.hpp"
 
@@ -58,7 +59,7 @@ TEST_CASE("tui frame shows the status banner output and journal") {
     tui.execute("go hollow_nail");
     const std::string f = frame(tui, 120, 30);
     MESSAGE(f); // a text snapshot of the frame, shown with -s
-    for (const char* s : {"2350-03-14 00:00", "Cash 1,850 cr", "Loan 4,200 cr due 03-21", "Dustkicker -> Hollow Nail",
+    for (const char* s : {"2350-03-14 00:00", "Cash 1,850 cr", "Loan 360 cr due 03-21", "Dustkicker -> Hollow Nail",
                           "RM 30%", "Hull 62%", "Crew 1/4", "Journal", "> go hollow_nail", "Underway."}) {
         CHECK_MESSAGE(contains(f, s), s);
     }
@@ -79,7 +80,9 @@ TEST_CASE("tui pins urgent journal entries until acknowledged") {
     Game g;
     belter::Tui tui(g.bus, g.session);
     tui.execute("new secondhand --seed 3");
-    tui.execute("advance 8d --force"); // the first instalment is missed
+    expanse::World& w = *g.session.world;
+    REQUIRE(expanse::transact(w, w.player, -w.companies.at(w.player).cash, expanse::LedgerCategory::other, "drank it"));
+    tui.execute("advance 8d --force"); // broke: the first instalment is missed
     std::string f = frame(tui, 120, 30);
     CHECK(contains(f, "1/3 missed"));
     CHECK(contains(f, "Esc: acknowledge"));
