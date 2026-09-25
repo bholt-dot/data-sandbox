@@ -35,6 +35,8 @@ not available on GCC 13 — use `<format>` + streams.
   - No global RNG; use per-system seeded streams.
   - Never let iteration order of an unordered container affect results.
   - No wall-clock time, no pointer-address ordering, no uninitialized reads.
+  - Player input that changes state is a `sim::CommandBus` *action* (queued, logged, replayable as
+    a script); *queries* get a const context. Handlers write to the given ostream, never std::cout.
 - Every persistent row/state type lists its fields once for save + load + hash:
   `static auto fields(auto& self) { return std::tie(self.a, self.b); }` (see `simcore/serialize.hpp`).
   Use `<cstdint>` fixed-width integers in state; no unordered containers or pointers in state.
