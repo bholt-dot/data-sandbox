@@ -23,6 +23,7 @@ sim_add_test(expanse_tests
     tests/orbit_tests.cpp
     tests/transit_tests.cpp
     tests/world_tests.cpp
+    tests/finance_tests.cpp
   LIBS sim::expanse)
 if(TARGET expanse_tests)
   target_compile_definitions(expanse_tests PRIVATE EXPANSE_DATA_DIR="${PROJECT_SOURCE_DIR}/data")
