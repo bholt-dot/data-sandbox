@@ -119,10 +119,17 @@ struct CrewMember {
     Credits wage_per_week = 0;
     ShipId ship;             // null = ashore looking for work
     StationId station;       // where they are when ashore
+    // Crew system state (crew.hpp).
+    sim::DefId<CrewOriginDef> origin; // null for the scenario captain if no origins are defined
+    std::string background;
+    Credits wages_owed = 0;
+    std::uint8_t unpaid_weeks = 0; // consecutive paydays missed
+    double health = 1.0;           // 0..1; falls when life support runs out
 
     static constexpr auto fields(auto& self) {
         return std::tie(self.name, self.role, self.skill, self.morale, self.wage_per_week, self.ship,
-                        self.station);
+                        self.station, self.origin, self.background, self.wages_owed,
+                        self.unpaid_weeks, self.health);
     }
 };
 

@@ -102,6 +102,16 @@ void ScenarioDef::describe(sim::Schema<ScenarioDef>& s) {
     s.optional("loan_weekly_payment", &ScenarioDef::loan_weekly_payment).min(Credits{0});
     s.optional("loan_missed_payment_limit", &ScenarioDef::loan_missed_payment_limit)
         .min(std::uint8_t{1});
+    s.optional("provision_days", &ScenarioDef::provision_days).min(0.0);
+}
+
+void CrewOriginDef::describe(sim::Schema<CrewOriginDef>& s) {
+    s.field("name", &CrewOriginDef::name).non_empty();
+    s.field("faction", &CrewOriginDef::faction);
+    s.optional("wage_multiplier", &CrewOriginDef::wage_multiplier).check(positive);
+    s.field("given_names", &CrewOriginDef::given_names).non_empty();
+    s.field("family_names", &CrewOriginDef::family_names).non_empty();
+    s.optional("backgrounds", &CrewOriginDef::backgrounds);
 }
 
 Content::Content() {
@@ -110,6 +120,7 @@ Content::Content() {
     defs_.define<StationDef>("station");
     defs_.define<ShipClassDef>("ship_class");
     defs_.define<ScenarioDef>("scenario");
+    defs_.define<CrewOriginDef>("crew_origin");
 }
 
 std::unique_ptr<Content> Content::load(const std::filesystem::path& dir, sim::Diagnostics& diags) {

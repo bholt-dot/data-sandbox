@@ -74,7 +74,7 @@ TEST_CASE("plot preview matches transit plot_transit") {
     r.departure = w.now();
     r.accel = u::gees(0.3);
     r.ship.dry_mass = u::tonnes(cls.dry_mass_t);
-    r.ship.cargo_mass = 0.0;
+    r.ship.cargo_mass = u::tonnes(cargo_mass_t(ship)); // the captain's provisions
     r.ship.reaction_mass = u::tonnes(ship.reaction_mass_t);
     r.ship.exhaust_velocity = u::km_per_s(cls.exhaust_velocity_km_s);
     const transit::Plot t = transit::plot_transit(c.orbits(), r);
@@ -121,7 +121,7 @@ TEST_CASE("drive limits acceleration at current mass") {
     const ShipId id = player_ship(w);
     const Ship& ship = w.ships.at(id);
     const ShipClassDef& cls = c.table<ShipClassDef>()[ship.ship_class];
-    const double wet = cls.dry_mass_t + ship.reaction_mass_t;
+    const double wet = cls.dry_mass_t + cargo_mass_t(ship) + ship.reaction_mass_t;
     CHECK(effective_max_accel_g(c, ship) == doctest::Approx(cls.max_accel_g * cls.dry_mass_t / wet));
 
     const CoursePreview p = plot_course(c, w, id, station("vesta_dock"), {10.0});
@@ -298,7 +298,7 @@ TEST_CASE("depart failures leave the world unchanged") {
         w.ships.at(id).cargo.push_back(CargoLot{c.find<CommodityDef>("ore"), 700.0, 0});
         const DepartResult r = depart(c, w, id, vesta, {0.3});
         CHECK(r.status == CourseStatus::overloaded);
-        CHECK(contains(r.reason, "700.0 t"));
+        CHECK(contains(r.reason, "700.1 t")); // plus the captain's provisions
     }
     SUBCASE("already underway") {
         REQUIRE(depart(c, w, id, vesta, {0.3}).ok());
@@ -417,7 +417,8 @@ TEST_CASE("ship status docked and unknown") {
     CHECK(st.location == "docked at Ceres Station");
     CHECK_FALSE(st.eta.has_value());
     CHECK(st.reaction_mass_pct == doctest::Approx(35.0));
-    CHECK(st.cargo_t == 0.0);
+    CHECK(st.cargo_t == doctest::Approx(cargo_mass_t(w.ships.at(id)))); // provisions only
+    CHECK(st.cargo_t < 0.1);
     CHECK(st.cargo_capacity_t == doctest::Approx(600.0));
     CHECK(st.hull_pct == doctest::Approx(62.0));
     CHECK(st.delta_v_available_km_s > 0.0);

@@ -4,6 +4,7 @@
 #include "expanse/finance.hpp"
 #include "expanse/scenario.hpp"
 #include "expanse/simulation.hpp"
+#include "expanse/stat_ids.hpp"
 #include "expanse/units.hpp"
 
 #include <algorithm>
@@ -425,8 +426,8 @@ void ship_arrives(const Content& content, World& world, sim::Scheduler<Event>& s
     }
     const StationId destination = u->destination;
     const sim::Duration trip = u->arrival - u->departure;
-    // TODO(crew): an engineer aboard should scale this down with skill.
-    const double wear = hull_wear(u->profile);
+    // A skilled engineer aboard reduces wear (crew stat multiplier, 1.0 without one).
+    const double wear = hull_wear(u->profile) * world.stats.get(ship_key(ship_id), stat::hull_wear);
 
     ship->location = Docked{destination};
     const double before = ship->hull_condition;

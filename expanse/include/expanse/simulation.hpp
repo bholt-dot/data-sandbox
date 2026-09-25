@@ -38,6 +38,8 @@ void daily_economy(const Content& content, World& world);
 void daily_finance(const Content& content, World& world);
 // crew.cpp: wages, morale, hiring pool turnover.
 void weekly_crew(const Content& content, World& world);
+// crew.cpp: life support consumption, deprivation, crew walking off at port.
+void daily_crew(const Content& content, World& world);
 // finance.cpp: a scheduled loan instalment.
 void loan_payment_due(const Content& content, World& world, sim::Scheduler<Event>& scheduler, LoanId loan);
 // ships.cpp: a transit completes.

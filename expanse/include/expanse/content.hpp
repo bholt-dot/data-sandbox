@@ -127,6 +127,21 @@ struct ShipClassDef {
     static void describe(sim::Schema<ShipClassDef>& s);
 };
 
+// ---- Crew origins -----------------------------------------------------------------------------
+
+// Where a job-seeker comes from: name lists, flavour backgrounds and wage expectations. Stations
+// draw mostly from origins of their own faction (see crew.hpp).
+struct CrewOriginDef {
+    std::string name;
+    Faction faction = Faction::independent;
+    double wage_multiplier = 1.0;
+    std::vector<std::string> given_names;
+    std::vector<std::string> family_names;
+    std::vector<std::string> backgrounds; // optional one-line colour
+
+    static void describe(sim::Schema<CrewOriginDef>& s);
+};
+
 // ---- Scenarios --------------------------------------------------------------------------------
 
 struct ScenarioDef {
@@ -143,6 +158,7 @@ struct ScenarioDef {
     Credits loan_principal = 0;
     Credits loan_weekly_payment = 0;
     std::uint8_t loan_missed_payment_limit = 3;
+    double provision_days = 0.0; // water/food/oxygen aboard at start, in days for the start crew
 
     static void describe(sim::Schema<ScenarioDef>& s);
 };
