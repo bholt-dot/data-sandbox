@@ -71,3 +71,17 @@ if(SIM_VIEWER)
   endif()
   find_package(Threads REQUIRED)
 endif()
+
+# Full-screen terminal UI for interactive apps only; core and expanse never link it.
+# FTXUI: MIT, no runtime dependencies (examples, docs and tests are off by default).
+option(SIM_TUI "Full-screen terminal UI via FTXUI" ON)
+if(SIM_TUI)
+  set(FTXUI_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+  set(FTXUI_QUIET ON CACHE BOOL "" FORCE)
+  FetchContent_Declare(ftxui
+    GIT_REPOSITORY https://github.com/ArthurSonzogni/FTXUI.git
+    GIT_TAG        v7.0.3
+    GIT_SHALLOW    TRUE
+    SYSTEM)
+  FetchContent_MakeAvailable(ftxui)
+endif()

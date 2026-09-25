@@ -10,6 +10,7 @@
 #include "expanse/units.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <format>
 #include <fstream>
 #include <iterator>
@@ -18,8 +19,12 @@ namespace expanse {
 
 namespace {
 
+using sim::Align;
 using sim::CommandError;
+using sim::Doc;
 using sim::Invocation;
+using sim::Style;
+using sim::styled;
 
 const World& require_world(const Session& s) {
     if (!s.world) {
@@ -32,13 +37,32 @@ World& require_world(Session& s) {
     return const_cast<World&>(require_world(std::as_const(s)));
 }
 
-std::string money(Credits c) {
-    // 1234567 -> "1,234,567 cr"
-    std::string digits = std::to_string(c < 0 ? -c : c);
-    for (std::ptrdiff_t i = static_cast<std::ptrdiff_t>(digits.size()) - 3; i > 0; i -= 3) {
-        digits.insert(static_cast<std::size_t>(i), ",");
-    }
-    return std::format("{}{} cr", c < 0 ? "-" : "", digits);
+// --- styled fragments ---
+
+sim::Span money(Credits c) { return styled(Style::money, format_credits(c)); }
+
+// An amount that is good news when positive (income, profit) and bad news when negative.
+sim::Span money_delta(Credits c) {
+    return styled(c > 0 ? Style::positive : c < 0 ? Style::negative : Style::plain, format_credits(c));
+}
+
+sim::Span key(std::string text) { return styled(Style::key, std::move(text)); }
+
+// A percentage of something that runs out: warning below `warn`, negative below `critical`.
+sim::Span level(double pct, double warn, double critical) {
+    const Style st = pct < critical ? Style::negative : pct < warn ? Style::warning : Style::plain;
+    return styled(st, std::format("{:.0f}%", pct));
+}
+
+// Shorter than sim::format_duration: the two leading units ("6d 23h", "4h 12m", "35m").
+std::string short_duration(sim::Duration d) {
+    const std::int64_t s = std::max<std::int64_t>(0, d.seconds);
+    const std::int64_t days = s / 86400;
+    const std::int64_t hours = (s % 86400) / 3600;
+    const std::int64_t minutes = (s % 3600) / 60;
+    if (days > 0) return std::format("{}d {}h", days, hours);
+    if (hours > 0) return std::format("{}h {}m", hours, minutes);
+    return std::format("{}m", minutes);
 }
 
 std::string_view kind_label(MessageKind k) {
@@ -53,16 +77,11 @@ std::string_view kind_label(MessageKind k) {
     return "?";
 }
 
-void print_message(const Message& m, std::ostream& out) {
-    out << std::format("  [{}] {:<7} {}{}\n", calendar::format_datetime(m.time), kind_label(m.kind),
-                       m.urgent ? "! " : "", m.text);
-}
-
 // Shows journal entries the player hasn't seen yet.
-void flush_messages(Session& s, std::ostream& out) {
+void flush_messages(Session& s, Doc& out) {
     const World& w = require_world(s);
     for (; s.messages_seen < w.messages.size(); ++s.messages_seen) {
-        print_message(w.messages[s.messages_seen], out);
+        out << journal_line(w.messages[s.messages_seen]) << "\n";
     }
 }
 
@@ -86,14 +105,16 @@ std::string location_text(const Content& c, const World& w, const Ship& ship) {
                        calendar::format_datetime(u.arrival), sim::format_duration(u.arrival - w.now()));
 }
 
-void advance_and_report(Session& s, sim::Time until, bool stop_on_urgent, std::ostream& out) {
+void advance_and_report(Session& s, sim::Time until, bool stop_on_urgent, Doc& out) {
     World& w = require_world(s);
     const AdvanceReport r = advance_to(*s.content, w, until, stop_on_urgent);
     flush_messages(s, out);
-    out << std::format("{} — {}\n", calendar::format_datetime(w.now()),
-                       r.stopped_early ? "stopped: something needs your attention" : "done");
+    out << calendar::format_datetime(w.now()) << " — "
+        << (r.stopped_early ? styled(Style::warning, "stopped: something needs your attention")
+                            : styled(Style::good, "done"))
+        << "\n";
     if (w.game_over) {
-        out << std::format("\n*** GAME OVER: {} ***\n", w.game_over->reason);
+        out << "\n" << styled(Style::urgent, std::format("*** GAME OVER: {} ***", w.game_over->reason)) << "\n";
     }
 }
 
@@ -106,20 +127,27 @@ World& require_playing(Session& s) {
     return w;
 }
 
-ShipId player_ship(const World& w) {
+std::optional<ShipId> find_player_ship(const World& w) {
     for (auto [id, ship] : w.ships) {
         if (ship.owner == w.player) {
             return id;
         }
     }
+    return std::nullopt;
+}
+
+ShipId player_ship(const World& w) {
+    if (const auto id = find_player_ship(w)) {
+        return *id;
+    }
     throw CommandError("you have no ship");
 }
 
 StationId station_arg(const Session& s, const Invocation& inv, std::string_view name = "station") {
-    const auto& key = inv.get<std::string>(name);
-    const StationId id = s.content->find<StationDef>(key);
+    const auto& k = inv.get<std::string>(name);
+    const StationId id = s.content->find<StationDef>(k);
     if (!id) {
-        throw CommandError(std::format("no station '{}' (see 'stations')", key));
+        throw CommandError(std::format("no station '{}' (see 'stations')", k));
     }
     return id;
 }
@@ -140,21 +168,24 @@ CoursePreview course_for(const Session& s, const Invocation& inv) {
     return plot_course(*s.content, w, ship, dest, opts);
 }
 
-void print_preview(const Content& c, const CoursePreview& p, std::ostream& out) {
+void print_preview(const Content& c, const CoursePreview& p, Doc& out) {
     const auto& stations = c.table<StationDef>();
-    out << std::format("Course {} -> {}\n", stations[p.origin].name, stations[p.destination].name);
+    out.heading(std::format("Course {} -> {}", stations[p.origin].name, stations[p.destination].name));
     out << std::format("  depart {}  arrive {}  ({})\n", calendar::format_datetime(p.departure),
                        calendar::format_datetime(p.arrival), sim::format_duration(p.duration));
     out << std::format("  {:.2f} AU at {:.2f} g{}, flip at {}, peak {:.0f} km/s\n", p.distance_au, p.accel_g,
                        p.accel_limited ? " (drive-limited)" : "", calendar::format_datetime(p.flip),
                        p.peak_speed_km_s);
     out << std::format("  dv {:.0f} km/s (incl. {:.0f} velocity match)\n", p.delta_v_km_s, p.match_delta_v_km_s);
-    out << std::format("  reaction mass {:.1f} t of {:.1f} t aboard -> {:.1f} t left ({:.0f}% of tank)\n",
-                       p.reaction_mass_needed_t, p.reaction_mass_aboard_t, p.reaction_mass_after_t,
-                       p.tank_after_pct);
-    out << std::format("  hull wear ~{:.1f}%, light-lag {}\n", p.hull_wear_pct,
-                       sim::format_duration(p.light_lag));
-    out << (p.feasible() ? "  GO\n" : std::format("  NO GO: {}\n", p.reason));
+    out << std::format("  reaction mass {:.1f} t of {:.1f} t aboard -> {:.1f} t left (", p.reaction_mass_needed_t,
+                       p.reaction_mass_aboard_t, p.reaction_mass_after_t)
+        << level(p.tank_after_pct, 20.0, 5.0) << " of tank)\n";
+    out << std::format("  hull wear ~{:.1f}%, light-lag {}\n", p.hull_wear_pct, sim::format_duration(p.light_lag));
+    if (p.feasible()) {
+        out << "  " << styled(Style::good, "GO") << "\n";
+    } else {
+        out << "  " << styled(Style::bad, "NO GO:") << " " << p.reason << "\n";
+    }
 }
 
 const std::vector<sim::ArgSpec> course_options = {
@@ -166,10 +197,10 @@ const std::vector<sim::ArgSpec> course_options = {
 };
 
 CommodityId commodity_arg(const Session& s, const Invocation& inv) {
-    const auto& key = inv.get<std::string>("commodity");
-    const CommodityId id = s.content->find<CommodityDef>(key);
+    const auto& k = inv.get<std::string>("commodity");
+    const CommodityId id = s.content->find<CommodityDef>(k);
     if (!id) {
-        throw CommandError(std::format("no commodity '{}'", key));
+        throw CommandError(std::format("no commodity '{}'", k));
     }
     return id;
 }
@@ -194,16 +225,136 @@ CrewId crew_arg(const World& w, const Invocation& inv) {
     throw CommandError(std::format("nobody with id #{} (see 'crew')", slot));
 }
 
-void print_trade(Session& s, const economy::TradeResult& r, std::ostream& out) {
+void print_trade(Session& s, const economy::TradeResult& r, Doc& out) {
     if (!r.ok()) {
         throw CommandError(r.reason);
     }
     s.messages_seen = s.world->messages.size(); // the reason repeats the journal line
     out << r.reason << "\n";
-    out << std::format("cash now {}\n", format_credits(s.world->companies.at(s.world->player).cash));
+    out << "cash now " << money(s.world->companies.at(s.world->player).cash) << "\n";
+}
+
+void crew_table(const World& w, const std::vector<CrewId>& ids, Doc& out) {
+    sim::TextTable& t = out.table({{"id"}, {"name"}, {"role"}, {"skill", Align::right}, {"wage/wk", Align::right},
+                               {"morale", Align::right}, {"background"}});
+    for (const CrewId id : ids) {
+        const CrewMember& m = w.crew.at(id);
+        t.row({key(std::format("#{}", id.index)), m.name, std::string(crew::role_name(m.role)),
+               std::format("{}", m.skill), money(m.wage_per_week), level(100.0 * m.morale, 40.0, 20.0),
+               styled(Style::dim, m.background)});
+    }
 }
 
 } // namespace
+
+sim::Line journal_line(const Message& m, bool compact) {
+    sim::Line line;
+    if (compact) {
+        line.append(styled(Style::dim, calendar::format_datetime(m.time).substr(5) + " "));
+    } else {
+        line.append({"  ", Style::plain});
+        line.append(styled(Style::dim, std::format("[{}]", calendar::format_datetime(m.time))));
+        line.append({std::format(" {:<7} ", kind_label(m.kind)),
+                     m.kind == MessageKind::warning ? Style::warning : Style::plain});
+    }
+    if (m.urgent) {
+        line.append(styled(Style::urgent, "! " + m.text));
+    } else {
+        line.append(styled(m.kind == MessageKind::warning ? Style::warning : Style::plain, m.text));
+    }
+    return line;
+}
+
+std::optional<StatusBanner> status_banner(const Session& s) {
+    if (!s.world) {
+        return std::nullopt;
+    }
+    const World& w = *s.world;
+    const Content& c = *s.content;
+    const Company& me = w.companies.at(w.player);
+    StatusBanner b;
+    b.company = me.name;
+    b.now = w.now();
+    b.cash = me.cash;
+    for (auto [id, loan] : w.loans) {
+        (void)id;
+        if (loan.borrower != w.player || loan.balance <= 0 || (b.loan && b.loan->due <= loan.next_due)) {
+            continue;
+        }
+        b.loan = StatusBanner::LoanStatus{
+            .lender = c.table<StationDef>()[loan.lender].name,
+            .balance = loan.balance,
+            .instalment = std::max<Credits>(0, loan.weekly_payment - loan.paid_since_due),
+            .due = loan.next_due,
+            .until_due = loan.next_due - w.now(),
+            .missed = loan.missed_payments,
+            .missed_limit = loan.missed_payment_limit,
+        };
+    }
+    if (const auto ship_id = find_player_ship(w)) {
+        const Ship& ship = w.ships.at(*ship_id);
+        const ShipClassDef& cls = c.table<ShipClassDef>()[ship.ship_class];
+        StatusBanner::ShipStatus st;
+        st.name = ship.name;
+        if (const auto* d = std::get_if<Docked>(&ship.location)) {
+            st.docked_at = c.table<StationDef>()[d->station].name;
+        } else {
+            const auto& u = std::get<Underway>(ship.location);
+            st.destination = c.table<StationDef>()[u.destination].name;
+            st.arrival = u.arrival;
+            st.remaining = u.arrival - w.now();
+        }
+        st.reaction_mass_pct = 100.0 * ship.reaction_mass_t / cls.reaction_mass_capacity_t;
+        st.hull_pct = 100.0 * ship.hull_condition;
+        st.crew = crew::aboard(w, *ship_id).size();
+        st.berths = cls.crew_berths;
+        b.ship = std::move(st);
+    }
+    if (w.game_over) {
+        b.game_over = w.game_over->reason;
+    }
+    return b;
+}
+
+std::vector<sim::Line> banner_segments(const StatusBanner& b) {
+    auto label = [](std::string text) { return styled(Style::dim, std::move(text) + " "); };
+    std::vector<sim::Line> out;
+    out.emplace_back(styled(Style::emphasis, calendar::format_datetime(b.now)));
+    out.push_back(std::vector<sim::Span>{label("Cash"), money_delta(b.cash)});
+    if (b.loan) {
+        const auto& l = *b.loan;
+        const bool short_of_cash = b.cash < l.instalment;
+        sim::Line seg(std::vector<sim::Span>{
+            label("Loan"), styled(short_of_cash ? Style::negative : Style::money, format_credits(l.instalment)),
+            {" due " + calendar::format_datetime(l.due).substr(5, 5), Style::plain},
+            styled(l.until_due < sim::days(2) ? Style::warning : Style::dim,
+                   std::format(" in {}", short_duration(l.until_due)))});
+        if (l.missed > 0) {
+            seg.append({" ", Style::plain});
+            seg.append(styled(Style::urgent, std::format("{}/{} missed", l.missed, l.missed_limit)));
+        }
+        out.push_back(std::move(seg));
+    }
+    if (b.ship) {
+        const auto& s = *b.ship;
+        if (s.docked_at) {
+            out.push_back(std::vector<sim::Span>{label(s.name), {"docked at " + *s.docked_at, Style::plain}});
+        } else {
+            out.push_back(std::vector<sim::Span>{
+                label(s.name), {"-> " + s.destination.value_or("?"), Style::plain},
+                styled(Style::dim, std::format(" ETA {} in {}", calendar::format_datetime(s.arrival).substr(5),
+                                               short_duration(s.remaining)))});
+        }
+        out.push_back(std::vector<sim::Span>{label("RM"), level(s.reaction_mass_pct, 25.0, 10.0)});
+        out.push_back(std::vector<sim::Span>{label("Hull"), level(s.hull_pct, 50.0, 25.0)});
+        out.push_back(std::vector<sim::Span>{
+            label("Crew"), {std::format("{}/{}", s.crew, s.berths), Style::plain}});
+    }
+    if (b.game_over) {
+        out.emplace_back(styled(Style::urgent, "GAME OVER: " + *b.game_over));
+    }
+    return out;
+}
 
 void register_game_commands(ShellBus& bus, std::shared_ptr<const Content> content) {
     // --- game lifecycle ---
@@ -218,23 +369,24 @@ void register_game_commands(ShellBus& bus, std::shared_ptr<const Content> conten
                           .completer = keys_of<ScenarioDef>(content)}},
          .options = {{.name = "seed", .type = sim::ArgType::integer, .help = "world seed",
                       .default_value = "1"}}},
-        [](Session& s, const Invocation& inv, std::ostream& out) {
-            const auto& key = inv.get<std::string>("scenario");
-            if (!s.content->find<ScenarioDef>(key)) {
-                throw CommandError(std::format("unknown scenario '{}'", key));
+        [](Session& s, const Invocation& inv, Doc& out) {
+            const auto& k = inv.get<std::string>("scenario");
+            if (!s.content->find<ScenarioDef>(k)) {
+                throw CommandError(std::format("unknown scenario '{}'", k));
             }
-            s.world = new_game(*s.content, key, static_cast<std::uint64_t>(inv.get<std::int64_t>("seed")));
+            s.world = new_game(*s.content, k, static_cast<std::uint64_t>(inv.get<std::int64_t>("seed")));
             s.messages_seen = 0;
-            const ScenarioDef& sc = s.content->table<ScenarioDef>()[s.content->find<ScenarioDef>(key)];
-            out << std::format("== {} ==\n{}\n\n", sc.name, sc.description);
-            out << std::format("{} — type 'status' to look around.\n",
-                               calendar::format_datetime(s.world->now()));
+            const ScenarioDef& sc = s.content->table<ScenarioDef>()[s.content->find<ScenarioDef>(k)];
+            out.heading(std::format("== {} ==", sc.name));
+            out << sc.description << "\n\n";
+            out << calendar::format_datetime(s.world->now()) << " — type '" << key("status")
+                << "' to look around.\n";
         });
 
     bus.add_query({.name = "save",
                    .summary = "Save the game to a file",
                    .positionals = {{.name = "path", .help = "file to write"}}},
-                  [](const Session& s, const Invocation& inv, std::ostream& out) {
+                  [](const Session& s, const Invocation& inv, Doc& out) {
                       const World& w = require_world(s);
                       const auto& path = inv.get<std::string>("path");
                       const auto bytes = save_world(w);
@@ -244,15 +396,15 @@ void register_game_commands(ShellBus& bus, std::shared_ptr<const Content> conten
                       if (!f.flush()) {
                           throw CommandError(std::format("failed writing '{}'", path));
                       }
-                      out << std::format("saved {} bytes to {} (state hash {:016x})\n", bytes.size(),
-                                         path, world_hash(w));
+                      out << std::format("saved {} bytes to {} ", bytes.size(), path)
+                          << styled(Style::dim, std::format("(state hash {:016x})", world_hash(w))) << "\n";
                   });
 
     bus.add_action({.name = "load",
                     .summary = "Load a saved game",
                     .details = "Replays of sessions that use 'load' depend on the save file.",
                     .positionals = {{.name = "path", .help = "file to read"}}},
-                   [](Session& s, const Invocation& inv, std::ostream& out) {
+                   [](Session& s, const Invocation& inv, Doc& out) {
                        const auto& path = inv.get<std::string>("path");
                        std::ifstream f(path, std::ios::binary);
                        if (!f) {
@@ -269,14 +421,14 @@ void register_game_commands(ShellBus& bus, std::shared_ptr<const Content> conten
                    });
 
     bus.add_query({.name = "hash", .summary = "Print the world state hash (for replay checks)"},
-                  [](const Session& s, const Invocation&, std::ostream& out) {
+                  [](const Session& s, const Invocation&, Doc& out) {
                       out << std::format("{:016x}\n", world_hash(require_world(s)));
                   });
 
     // --- time ---
 
     bus.add_query({.name = "date", .summary = "Show the current date and time"},
-                  [](const Session& s, const Invocation&, std::ostream& out) {
+                  [](const Session& s, const Invocation&, Doc& out) {
                       out << calendar::format_datetime(require_world(s).now()) << "\n";
                   });
 
@@ -287,7 +439,7 @@ void register_game_commands(ShellBus& bus, std::shared_ptr<const Content> conten
                                      .help = "how long, e.g. 6h, 3d, 2w"}},
                     .options = {{.name = "force", .type = sim::ArgType::flag,
                                  .help = "don't stop for urgent events"}}},
-                   [](Session& s, const Invocation& inv, std::ostream& out) {
+                   [](Session& s, const Invocation& inv, Doc& out) {
                        const auto span = inv.get<sim::Duration>("span");
                        if (span.seconds <= 0) {
                            throw CommandError("span must be positive");
@@ -300,7 +452,7 @@ void register_game_commands(ShellBus& bus, std::shared_ptr<const Content> conten
                     .summary = "Let time pass until something needs your attention",
                     .options = {{.name = "max", .type = sim::ArgType::duration,
                                  .help = "give up after this long", .default_value = "30d"}}},
-                   [](Session& s, const Invocation& inv, std::ostream& out) {
+                   [](Session& s, const Invocation& inv, Doc& out) {
                        const World& w = require_world(s);
                        advance_and_report(s, w.now() + inv.get<sim::Duration>("max"), true, out);
                    });
@@ -312,89 +464,90 @@ void register_game_commands(ShellBus& bus, std::shared_ptr<const Content> conten
                    .summary = "Show recent messages",
                    .options = {{.name = "last", .type = sim::ArgType::integer,
                                 .help = "how many", .default_value = "10"}}},
-                  [](const Session& s, const Invocation& inv, std::ostream& out) {
+                  [](const Session& s, const Invocation& inv, Doc& out) {
                       const World& w = require_world(s);
                       const auto n = static_cast<std::size_t>(std::max<std::int64_t>(0, inv.get<std::int64_t>("last")));
                       const std::size_t first = w.messages.size() > n ? w.messages.size() - n : 0;
                       if (first == w.messages.size()) {
-                          out << "  (no messages)\n";
+                          out << "  " << styled(Style::dim, "(no messages)") << "\n";
                       }
                       for (std::size_t i = first; i < w.messages.size(); ++i) {
-                          print_message(w.messages[i], out);
+                          out << journal_line(w.messages[i]) << "\n";
                       }
                   });
 
     bus.add_query(
         {.name = "status", .aliases = {"st"}, .summary = "Your company, ships and debts"},
-        [](const Session& s, const Invocation&, std::ostream& out) {
+        [](const Session& s, const Invocation&, Doc& out) {
             const World& w = require_world(s);
             const Content& c = *s.content;
             const Company& me = w.companies.at(w.player);
-            out << std::format("{} — {}\n", me.name, calendar::format_datetime(w.now()));
-            out << std::format("  cash      {}\n", money(me.cash));
+            out.heading(std::format("{} — {}", me.name, calendar::format_datetime(w.now())));
+            sim::TextTable& t = out.table({{}, {}});
+            t.row({"cash", money_delta(me.cash)});
             for (auto [id, loan] : w.loans) {
                 (void)id;
                 if (loan.borrower != w.player) {
                     continue;
                 }
-                out << std::format("  loan      {} owed to {}, {} due {}{}\n", money(loan.balance),
-                                   c.table<StationDef>()[loan.lender].name, money(loan.weekly_payment),
-                                   calendar::format_date(loan.next_due),
-                                   loan.missed_payments ? std::format(" ({} missed!)", loan.missed_payments) : "");
+                sim::Line text(std::vector<sim::Span>{
+                    money(loan.balance),
+                    {std::format(" owed to {}, ", c.table<StationDef>()[loan.lender].name), Style::plain},
+                    money(loan.weekly_payment),
+                    {std::format(" due {}", calendar::format_date(loan.next_due)), Style::plain}});
+                if (loan.missed_payments > 0) {
+                    text.append({" ", Style::plain});
+                    text.append(styled(Style::urgent, std::format("({} missed!)", loan.missed_payments)));
+                }
+                t.row({"loan", std::move(text)});
             }
             for (auto [id, ship] : w.ships) {
-                (void)id;
                 if (ship.owner != w.player) {
                     continue;
                 }
                 const ShipClassDef& cls = c.table<ShipClassDef>()[ship.ship_class];
-                out << std::format("  ship      {} ({})\n", ship.name, cls.name);
-                out << std::format("            {}\n", location_text(c, w, ship));
-                out << std::format("            reaction mass {:.0f}/{:.0f} t ({:.0f}%), hull {:.0f}%\n",
-                                   ship.reaction_mass_t, cls.reaction_mass_capacity_t,
-                                   100.0 * ship.reaction_mass_t / cls.reaction_mass_capacity_t,
-                                   100.0 * ship.hull_condition);
-                out << std::format("            cargo {:.0f}/{:.0f} t", cargo_mass_t(ship), cls.cargo_capacity_t);
+                t.row({"ship", sim::Line(std::vector<sim::Span>{styled(Style::emphasis, ship.name),
+                                                                {" (" + cls.name + ")", Style::plain}})});
+                t.row({"", location_text(c, w, ship)});
+                const double rm_pct = 100.0 * ship.reaction_mass_t / cls.reaction_mass_capacity_t;
+                t.row({"", sim::Line(std::vector<sim::Span>{
+                               {std::format("reaction mass {:.0f}/{:.0f} t (", ship.reaction_mass_t,
+                                            cls.reaction_mass_capacity_t),
+                                Style::plain},
+                               level(rm_pct, 25.0, 10.0),
+                               {"), hull ", Style::plain},
+                               level(100.0 * ship.hull_condition, 50.0, 25.0)})});
+                std::string cargo = std::format("cargo {:.0f}/{:.0f} t", cargo_mass_t(ship), cls.cargo_capacity_t);
                 for (const CargoLot& lot : ship.cargo) {
                     const std::string& what = c.table<CommodityDef>()[lot.commodity].name;
-                    out << (lot.tonnes < 10.0 ? std::format(", {:.2f} t {}", lot.tonnes, what)
-                                              : std::format(", {:.0f} t {}", lot.tonnes, what));
+                    cargo += lot.tonnes < 10.0 ? std::format(", {:.2f} t {}", lot.tonnes, what)
+                                               : std::format(", {:.0f} t {}", lot.tonnes, what);
                 }
-                out << "\n";
-                std::size_t aboard = 0;
-                for (auto [cid, member] : w.crew) {
-                    (void)cid;
-                    aboard += member.ship == id ? 1u : 0u;
-                }
-                out << std::format("            crew {}/{}\n", aboard, cls.crew_berths);
+                t.row({"", cargo});
+                t.row({"", std::format("crew {}/{}", crew::aboard(w, id).size(), cls.crew_berths)});
             }
         });
 
     bus.add_query(
         {.name = "stations",
          .summary = "List stations with distance and light-lag from your ship"},
-        [](const Session& s, const Invocation&, std::ostream& out) {
+        [](const Session& s, const Invocation&, Doc& out) {
             const World& w = require_world(s);
             const Content& c = *s.content;
             std::optional<Vec3> here;
-            for (auto [id, ship] : w.ships) {
-                (void)id;
-                if (ship.owner == w.player) {
-                    here = ship_position(c, w, ship);
-                    break;
-                }
+            if (const auto ship = find_player_ship(w)) {
+                here = ship_position(c, w, w.ships.at(*ship));
             }
-            out << std::format("  {:<20} {:<22} {:<12} {:>9} {:>10}\n", "key", "name", "faction", "dist AU",
-                               "light-lag");
+            sim::TextTable& t = out.table({{"key"}, {"name"}, {"faction"}, {"dist AU", Align::right},
+                                       {"light-lag", Align::right}});
             for (auto [id, st] : c.table<StationDef>()) {
                 const Vec3 p = c.orbits().world_position(c.orbit_of(id), w.now());
                 const double d = here ? distance(*here, p) : 0.0;
                 const auto lag = sim::seconds(static_cast<std::int64_t>(d / 299'792'458.0));
                 constexpr std::array factions{"earth", "mars", "belt", "independent"};
-                out << std::format("  {:<20} {:<22} {:<12} {:>9.2f} {:>10}\n",
-                                   c.table<StationDef>().key(id), st.name,
-                                   factions[static_cast<std::size_t>(st.faction)], units::to_au(d),
-                                   sim::format_duration(lag));
+                t.row({key(std::string(c.table<StationDef>().key(id))), st.name,
+                       factions[static_cast<std::size_t>(st.faction)], std::format("{:.2f}", units::to_au(d)),
+                       sim::format_duration(lag)});
             }
         });
 
@@ -403,7 +556,7 @@ void register_game_commands(ShellBus& bus, std::shared_ptr<const Content> conten
          .summary = "Describe a station and its stockpiles",
          .positionals = {{.name = "key", .help = "station key (see 'stations')",
                           .completer = keys_of<StationDef>(content)}}},
-        [](const Session& s, const Invocation& inv, std::ostream& out) {
+        [](const Session& s, const Invocation& inv, Doc& out) {
             const World& w = require_world(s);
             const Content& c = *s.content;
             const auto id = c.find<StationDef>(inv.get<std::string>("key"));
@@ -411,14 +564,18 @@ void register_game_commands(ShellBus& bus, std::shared_ptr<const Content> conten
                 throw CommandError(std::format("no station '{}'", inv.get<std::string>("key")));
             }
             const StationDef& st = c.table<StationDef>()[id];
-            out << std::format("{} — pop. {}, docking {}/day\n", st.name, st.population, money(st.docking_fee));
+            out.heading(std::format("{} — pop. {}, docking {}/day", st.name, st.population,
+                                    format_credits(st.docking_fee)));
             const StationState& state = w.stations[index_of(id)];
+            sim::TextTable& t = out.table({{"commodity"}, {"stock", Align::right}, {"made/day", Align::right},
+                                       {"used/day", Align::right}});
             for (const MarketEntryDef& m : st.market) {
-                out << std::format("  {:<18} stock {:>9.0f} t   +{:.0f}/-{:.0f} t/day\n",
-                                   c.table<CommodityDef>()[m.commodity].name,
-                                   state.stock[index_of(m.commodity)], m.production, m.consumption);
+                t.row({c.table<CommodityDef>()[m.commodity].name,
+                       std::format("{:.0f} t", state.stock[index_of(m.commodity)]),
+                       std::format("+{:.0f} t", m.production), std::format("-{:.0f} t", m.consumption)});
             }
         });
+
     // --- flying ---
 
     bus.add_query({.name = "plot",
@@ -429,25 +586,26 @@ void register_game_commands(ShellBus& bus, std::shared_ptr<const Content> conten
                    .positionals = {{.name = "station", .help = "destination key",
                                     .completer = keys_of<StationDef>(content)}},
                    .options = course_options},
-                  [](const Session& s, const Invocation& inv, std::ostream& out) {
+                  [](const Session& s, const Invocation& inv, Doc& out) {
                       print_preview(*s.content, course_for(s, inv), out);
                   });
 
     bus.add_query({.name = "routes",
                    .summary = "Fastest course to every station at an acceleration",
                    .options = {course_options[0]}},
-                  [](const Session& s, const Invocation& inv, std::ostream& out) {
+                  [](const Session& s, const Invocation& inv, Doc& out) {
                       const World& w = require_world(s);
                       const auto all = plot_all_destinations(
                           *s.content, w, player_ship(w), {inv.get<sim::Acceleration>("accel").gees()});
-                      out << std::format("  {:<22} {:>7} {:>11} {:>9} {:>9}  {}\n", "destination", "AU",
-                                         "time", "rmass t", "tank left", "");
+                      sim::TextTable& t = out.table({{"destination"}, {"AU", Align::right}, {"time", Align::right},
+                                                 {"rmass t", Align::right}, {"tank left", Align::right}, {""}});
                       for (const CoursePreview& p : all) {
-                          out << std::format("  {:<22} {:>7.2f} {:>11} {:>9.1f} {:>8.0f}%  {}\n",
-                                             s.content->table<StationDef>()[p.destination].name,
-                                             p.distance_au, sim::format_duration(p.duration),
-                                             p.reaction_mass_needed_t, p.tank_after_pct,
-                                             p.feasible() ? "" : p.reason);
+                          const bool go = p.feasible();
+                          const std::string& name = s.content->table<StationDef>()[p.destination].name;
+                          t.row({go ? sim::Line(name) : sim::Line(styled(Style::dim, name)),
+                                 std::format("{:.2f}", p.distance_au), sim::format_duration(p.duration),
+                                 std::format("{:.1f}", p.reaction_mass_needed_t), level(p.tank_after_pct, 20.0, 5.0),
+                                 go ? sim::Line() : sim::Line(styled(Style::bad, p.reason))});
                       }
                   });
 
@@ -456,7 +614,7 @@ void register_game_commands(ShellBus& bus, std::shared_ptr<const Content> conten
                     .positionals = {{.name = "station", .help = "destination key",
                                      .completer = keys_of<StationDef>(content)}},
                     .options = course_options},
-                   [](Session& s, const Invocation& inv, std::ostream& out) {
+                   [](Session& s, const Invocation& inv, Doc& out) {
                        World& w = require_playing(s);
                        const CoursePreview p = course_for(s, inv);
                        if (!p.feasible()) {
@@ -469,9 +627,10 @@ void register_game_commands(ShellBus& bus, std::shared_ptr<const Content> conten
                            throw CommandError(r.reason);
                        }
                        flush_messages(s, out);
-                       out << std::format("Underway. ETA {} ({}). 'wait' to fly.\n",
-                                          calendar::format_datetime(r.preview.arrival),
-                                          sim::format_duration(r.preview.duration));
+                       out << styled(Style::good, "Underway.")
+                           << std::format(" ETA {} ({}). '", calendar::format_datetime(r.preview.arrival),
+                                          sim::format_duration(r.preview.duration))
+                           << key("wait") << "' to fly.\n";
                    });
 
     // --- money ---
@@ -482,22 +641,25 @@ void register_game_commands(ShellBus& bus, std::shared_ptr<const Content> conten
                                 .default_value = "30"},
                                {.name = "entries", .type = sim::ArgType::integer,
                                 .help = "recent ledger lines to show", .default_value = "10"}}},
-                  [](const Session& s, const Invocation& inv, std::ostream& out) {
+                  [](const Session& s, const Invocation& inv, Doc& out) {
                       const World& w = require_world(s);
                       const sim::Time to = w.now() + sim::seconds(1);
                       const sim::Time from = to - sim::days(std::max<std::int64_t>(1, inv.get<std::int64_t>("days")));
                       const LedgerSummary sum = summarize_ledger(w, w.player, from, to);
-                      out << std::format("Books since {}: opening {}, closing {}\n",
-                                         calendar::format_date(from), format_credits(sum.opening_balance),
-                                         format_credits(sum.closing_balance));
+                      out.heading(std::format("Books since {}: opening {}, closing {}", calendar::format_date(from),
+                                              format_credits(sum.opening_balance),
+                                              format_credits(sum.closing_balance)));
+                      sim::TextTable cats{.columns = {{"category"}, {"income", Align::right}, {"expenses", Align::right}}};
                       for (const auto& [name, cat] : enum_names(LedgerCategory{})) {
                           if (sum.income_of(cat) != 0 || sum.expense_of(cat) != 0) {
-                              out << std::format("  {:<10} +{:>12}  -{:>12}\n", name,
-                                                 format_credits(sum.income_of(cat)),
-                                                 format_credits(sum.expense_of(cat)));
+                              cats.row({std::string(name), money_delta(sum.income_of(cat)),
+                                        money_delta(-sum.expense_of(cat))});
                           }
                       }
-                      out << std::format("  net {}\n", format_credits(sum.net()));
+                      if (!cats.rows.empty()) {
+                          out.table(cats.columns).rows = std::move(cats.rows);
+                      }
+                      out << "  net " << money_delta(sum.net()) << "\n";
                       std::vector<const LedgerEntry*> mine;
                       for (const LedgerEntry& e : ledger_between(w, from, to)) {
                           if (e.company == w.player) {
@@ -505,21 +667,24 @@ void register_game_commands(ShellBus& bus, std::shared_ptr<const Content> conten
                           }
                       }
                       const auto n = static_cast<std::size_t>(std::max<std::int64_t>(0, inv.get<std::int64_t>("entries")));
-                      for (std::size_t i = mine.size() > n ? mine.size() - n : 0; i < mine.size(); ++i) {
-                          const LedgerEntry& e = *mine[i];
-                          out << std::format("  {}  {:>12}  {:<8} {}\n", calendar::format_date(e.time),
-                                             format_credits(e.amount), to_string(e.category), e.description);
+                      if (!mine.empty() && n > 0) {
+                          sim::TextTable& t = out.table({{"date"}, {"amount", Align::right}, {"category"}, {"entry"}});
+                          for (std::size_t i = mine.size() > n ? mine.size() - n : 0; i < mine.size(); ++i) {
+                              const LedgerEntry& e = *mine[i];
+                              t.row({styled(Style::dim, calendar::format_date(e.time)), money_delta(e.amount),
+                                     std::string(to_string(e.category)), e.description});
+                          }
                       }
                       const Credits tabs = total_dock_tabs(w, w.player);
                       if (tabs > 0) {
-                          out << std::format("  owed to dockmasters: {}\n", format_credits(tabs));
+                          out << "  " << styled(Style::warning, "owed to dockmasters: " + format_credits(tabs)) << "\n";
                       }
                   });
 
     bus.add_action({.name = "pay",
                     .summary = "Pay toward your loan now (counts toward the next instalment)",
                     .positionals = {{.name = "amount", .type = sim::ArgType::integer, .help = "credits"}}},
-                   [](Session& s, const Invocation& inv, std::ostream& out) {
+                   [](Session& s, const Invocation& inv, Doc& out) {
                        World& w = require_playing(s);
                        for (auto [id, loan] : w.loans) {
                            if (loan.borrower == w.player) {
@@ -536,7 +701,7 @@ void register_game_commands(ShellBus& bus, std::shared_ptr<const Content> conten
                    });
 
     bus.add_action({.name = "paytab", .summary = "Settle what you owe the dockmaster here"},
-                   [](Session& s, const Invocation&, std::ostream& out) {
+                   [](Session& s, const Invocation&, Doc& out) {
                        World& w = require_playing(s);
                        const Ship& ship = w.ships.at(player_ship(w));
                        const auto* docked = std::get_if<Docked>(&ship.location);
@@ -545,27 +710,37 @@ void register_game_commands(ShellBus& bus, std::shared_ptr<const Content> conten
                        }
                        const Credits paid = pay_dock_tab(*s.content, w, w.player, docked->station);
                        flush_messages(s, out);
-                       out << std::format("paid {}; still owed here: {}\n", format_credits(paid),
-                                          format_credits(dock_tab(w, w.player, docked->station)));
+                       out << "paid " << money(paid) << "; still owed here: "
+                           << money(dock_tab(w, w.player, docked->station)) << "\n";
                    });
+
     // --- trade ---
 
     bus.add_query({.name = "market",
                    .summary = "Prices at your dock (or another station, as last known)",
                    .positionals = {{.name = "station", .help = "station key", .required = false,
                                     .completer = keys_of<StationDef>(content)}}},
-                  [](const Session& s, const Invocation& inv, std::ostream& out) {
+                  [](const Session& s, const Invocation& inv, Doc& out) {
                       const World& w = require_world(s);
                       const StationId st = inv.has("station") ? station_arg(s, inv) : docked_station(w);
                       const StationDef& def = s.content->table<StationDef>()[st];
-                      out << std::format("{} market                 stock      normal     buy at    sell at\n", def.name);
+                      out.heading(def.name + " market");
+                      sim::TextTable& t = out.table({{"key"}, {"commodity"}, {"stock", Align::right},
+                                                 {"normal", Align::right}, {"buy at", Align::right},
+                                                 {"sell at", Align::right}, {""}});
                       for (const MarketEntryDef& m : def.market) {
                           const auto q = economy::quote(*s.content, w, st, m.commodity);
-                          out << std::format("  {:<12} {:<14} {:>8.0f} t {:>8.0f} t {:>7.0f} cr {:>7.0f} cr{}\n",
-                                             s.content->table<CommodityDef>().key(m.commodity),
-                                             s.content->table<CommodityDef>()[m.commodity].name, q->stock,
-                                             q->target, q->ask, q->bid,
-                                             q->disrupted_days ? "  (supply disrupted)" : "");
+                          // Scarce goods are dear, glutted goods cheap: flag both for traders.
+                          const Style stock_style = q->stock < 0.5 * q->target   ? Style::negative
+                                                    : q->stock > 1.5 * q->target ? Style::positive
+                                                                                 : Style::plain;
+                          t.row({key(std::string(s.content->table<CommodityDef>().key(m.commodity))),
+                                 s.content->table<CommodityDef>()[m.commodity].name,
+                                 styled(stock_style, std::format("{:.0f} t", q->stock)),
+                                 std::format("{:.0f} t", q->target), money(static_cast<Credits>(std::lround(q->ask))),
+                                 money(static_cast<Credits>(std::lround(q->bid))),
+                                 q->disrupted_days ? sim::Line(styled(Style::warning, "supply disrupted"))
+                                                   : sim::Line()});
                       }
                   });
 
@@ -576,7 +751,7 @@ void register_game_commands(ShellBus& bus, std::shared_ptr<const Content> conten
                     .summary = "Buy cargo at your dock",
                     .positionals = {commodity_spec,
                                     {.name = "tonnes", .type = sim::ArgType::number, .help = "amount"}}},
-                   [](Session& s, const Invocation& inv, std::ostream& out) {
+                   [](Session& s, const Invocation& inv, Doc& out) {
                        World& w = require_playing(s);
                        print_trade(s, economy::buy(*s.content, w, player_ship(w), commodity_arg(s, inv),
                                                    inv.get<double>("tonnes")), out);
@@ -587,7 +762,7 @@ void register_game_commands(ShellBus& bus, std::shared_ptr<const Content> conten
                     .positionals = {commodity_spec,
                                     {.name = "tonnes", .type = sim::ArgType::number,
                                      .help = "amount (default: all aboard)", .required = false}}},
-                   [](Session& s, const Invocation& inv, std::ostream& out) {
+                   [](Session& s, const Invocation& inv, Doc& out) {
                        World& w = require_playing(s);
                        const ShipId ship = player_ship(w);
                        const CommodityId k = commodity_arg(s, inv);
@@ -602,7 +777,7 @@ void register_game_commands(ShellBus& bus, std::shared_ptr<const Content> conten
                        const economy::TradeResult r = economy::sell(*s.content, w, ship, k, tonnes);
                        print_trade(s, r, out);
                        if (r.ok()) {
-                           out << std::format("profit on cost {}\n", format_credits(r.profit));
+                           out << "profit on cost " << money_delta(r.profit) << "\n";
                        }
                    });
 
@@ -610,7 +785,7 @@ void register_game_commands(ShellBus& bus, std::shared_ptr<const Content> conten
                     .summary = "Buy water as reaction mass (default: fill what you can afford)",
                     .positionals = {{.name = "tonnes", .type = sim::ArgType::number, .help = "amount",
                                      .required = false}}},
-                   [](Session& s, const Invocation& inv, std::ostream& out) {
+                   [](Session& s, const Invocation& inv, Doc& out) {
                        World& w = require_playing(s);
                        const std::optional<double> t =
                            inv.has("tonnes") ? std::optional{inv.get<double>("tonnes")} : std::nullopt;
@@ -620,29 +795,24 @@ void register_game_commands(ShellBus& bus, std::shared_ptr<const Content> conten
     // --- crew ---
 
     bus.add_query({.name = "crew", .summary = "Who's aboard, supplies, and who's looking for work here"},
-                  [](const Session& s, const Invocation&, std::ostream& out) {
+                  [](const Session& s, const Invocation&, Doc& out) {
                       const World& w = require_world(s);
                       const Content& c = *s.content;
                       const ShipId ship = player_ship(w);
-                      auto row = [&](CrewId id) {
-                          const CrewMember& m = w.crew.at(id);
-                          out << std::format("  #{:<4} {:<24} {:<9} skill {:>3}  {:>6}/wk  morale {:>3.0f}%  {}\n",
-                                             id.index, m.name, crew::role_name(m.role), m.skill,
-                                             format_credits(m.wage_per_week), 100.0 * m.morale, m.background);
-                      };
-                      out << "Aboard:\n";
-                      for (const CrewId id : crew::aboard(w, ship)) {
-                          row(id);
-                      }
+                      out.heading("Aboard:");
+                      crew_table(w, crew::aboard(w, ship), out);
                       const Ship& sh = w.ships.at(ship);
                       const crew::Provisions have = crew::stores(c, sh);
-                      out << std::format("  payroll {}/week; stores: water {:.2f} t, food {:.2f} t, oxygen {:.2f} t\n",
-                                         format_credits(crew::weekly_payroll(w, ship)), have.water_t,
-                                         have.food_t, have.oxygen_t);
+                      out << "  payroll " << money(crew::weekly_payroll(w, ship))
+                          << std::format("/week; stores: water {:.2f} t, food {:.2f} t, oxygen {:.2f} t\n",
+                                         have.water_t, have.food_t, have.oxygen_t);
                       if (const auto* d = std::get_if<Docked>(&sh.location)) {
-                          out << std::format("Looking for work at {}:\n", c.table<StationDef>()[d->station].name);
-                          for (const CrewId id : crew::pool_at(w, d->station)) {
-                              row(id);
+                          out.heading(std::format("Looking for work at {}:", c.table<StationDef>()[d->station].name));
+                          const auto pool = crew::pool_at(w, d->station);
+                          if (pool.empty()) {
+                              out << "  " << styled(Style::dim, "(nobody)") << "\n";
+                          } else {
+                              crew_table(w, pool, out);
                           }
                       }
                   });
@@ -650,7 +820,7 @@ void register_game_commands(ShellBus& bus, std::shared_ptr<const Content> conten
     bus.add_action({.name = "hire",
                     .summary = "Sign on someone from the dock (pays a week's wage up front)",
                     .positionals = {{.name = "id", .type = sim::ArgType::integer, .help = "#id from 'crew'"}}},
-                   [](Session& s, const Invocation& inv, std::ostream& out) {
+                   [](Session& s, const Invocation& inv, Doc& out) {
                        World& w = require_playing(s);
                        const CrewId id = crew_arg(w, inv);
                        const crew::HireResult r = crew::hire(*s.content, w, player_ship(w), id);
@@ -658,13 +828,13 @@ void register_game_commands(ShellBus& bus, std::shared_ptr<const Content> conten
                            throw CommandError(r.reason);
                        }
                        flush_messages(s, out);
-                       out << std::format("{} signs on.\n", w.crew.at(id).name);
+                       out << styled(Style::emphasis, w.crew.at(id).name) << " signs on.\n";
                    });
 
     bus.add_action({.name = "fire",
                     .summary = "Put a crew member ashore at this dock",
                     .positionals = {{.name = "id", .type = sim::ArgType::integer, .help = "#id from 'crew'"}}},
-                   [](Session& s, const Invocation& inv, std::ostream& out) {
+                   [](Session& s, const Invocation& inv, Doc& out) {
                        World& w = require_playing(s);
                        const CrewId id = crew_arg(w, inv);
                        const std::string name = w.crew.at(id).name;
@@ -673,7 +843,7 @@ void register_game_commands(ShellBus& bus, std::shared_ptr<const Content> conten
                            throw CommandError(r.reason);
                        }
                        flush_messages(s, out);
-                       out << std::format("{} goes ashore.\n", name);
+                       out << styled(Style::emphasis, name) << " goes ashore.\n";
                    });
 }
 

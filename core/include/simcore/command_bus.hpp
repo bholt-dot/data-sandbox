@@ -11,8 +11,8 @@
 // script (with the same seed and build) through execute_line() reproduces the session exactly,
 // which is what batch/script mode and "save my session as a replay" rely on.
 //
-// Queries get a const Context and are never logged. Handlers write to the ostream they are given
-// (never std::cout) so tests and batch mode can capture output.
+// Queries get a const Context and are never logged. Handlers write styled output to the Doc they
+// are given (never std::cout); the caller renders it as plain text, ANSI or a full-screen UI.
 //
 // Actions that fail (CommandError or any other exception from the handler) are still logged, with
 // the error: a handler may have changed state before failing, and replaying the failure keeps the
@@ -27,6 +27,7 @@
 #include <functional>
 #include <optional>
 #include <ostream>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -34,6 +35,7 @@
 #include <vector>
 
 #include "simcore/command.hpp"
+#include "simcore/doc.hpp"
 
 namespace sim {
 
@@ -56,8 +58,8 @@ struct LineResult {
 template <class Context>
 class CommandBus {
 public:
-    using QueryHandler = std::function<void(const Context&, const Invocation&, std::ostream&)>;
-    using ActionHandler = std::function<void(Context&, const Invocation&, std::ostream&)>;
+    using QueryHandler = std::function<void(const Context&, const Invocation&, Doc&)>;
+    using ActionHandler = std::function<void(Context&, const Invocation&, Doc&)>;
 
     struct ApplyResult {
         std::size_t applied = 0;
@@ -84,7 +86,7 @@ public:
     const CommandRegistry& registry() const { return registry_; }
 
     // Parses one line; runs it if it is a query, queues it if it is an action.
-    LineResult submit_line(std::string_view line, const Context& ctx, std::ostream& out) {
+    LineResult submit_line(std::string_view line, const Context& ctx, Doc& out) {
         std::optional<Invocation> inv;
         try {
             inv = registry_.parse(line);
@@ -124,7 +126,7 @@ public:
     std::size_t pending() const { return pending_.size(); }
 
     // Applies queued actions in submission order and logs them. Call at the start of a tick.
-    ApplyResult apply_pending(Context& ctx, std::ostream& out) {
+    ApplyResult apply_pending(Context& ctx, Doc& out) {
         ApplyResult result;
         while (!pending_.empty()) {
             Invocation inv = std::move(pending_.front());
@@ -147,7 +149,7 @@ public:
     }
 
     // submit_line + apply_pending: the unit of work for a REPL line or a script line.
-    LineResult execute_line(std::string_view line, Context& ctx, std::ostream& out) {
+    LineResult execute_line(std::string_view line, Context& ctx, Doc& out) {
         LineResult r = submit_line(line, std::as_const(ctx), out);
         if (r.status == LineResult::Status::error) {
             return r;
@@ -196,7 +198,7 @@ private:
                                     .help = "command to describe",
                                     .required = false,
                                     .completer = [this] { return command_names(); }}}},
-                  [this](const Context&, const Invocation& inv, std::ostream& out) {
+                  [this](const Context&, const Invocation& inv, Doc& out) {
                       if (!inv.has("command")) {
                           registry_.write_help(out);
                           return;
@@ -212,10 +214,14 @@ private:
                       registry_.write_help(out, *spec);
                   });
         add_query({.name = "quit", .aliases = {"exit"}, .summary = "Leave the shell"},
-                  [this](const Context&, const Invocation&, std::ostream&) { quit_requested_ = true; });
+                  [this](const Context&, const Invocation&, Doc&) { quit_requested_ = true; });
         add_query({.name = "history",
                    .summary = "Show this session's state-changing commands as a replayable script"},
-                  [this](const Context&, const Invocation&, std::ostream& out) { write_script(out); });
+                  [this](const Context&, const Invocation&, Doc& out) {
+                      std::ostringstream script;
+                      write_script(script);
+                      out << script.str();
+                  });
     }
 
     std::vector<std::string> command_names() const {

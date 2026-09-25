@@ -774,29 +774,25 @@ std::string CommandRegistry::usage(const CommandSpec& spec) const {
     return out;
 }
 
-void CommandRegistry::write_help(std::ostream& out) const {
-    const auto cmds = commands();
-    std::size_t width = 0;
-    for (const CommandSpec* c : cmds) {
-        width = std::max(width, c->name.size());
-    }
-    out << "Commands:\n";
-    for (const CommandSpec* c : cmds) {
-        out << std::format("  {:<{}}  {}", c->name, width, c->summary);
+void CommandRegistry::write_help(Doc& out) const {
+    out.heading("Commands:");
+    TextTable& t = out.table({{}, {}});
+    for (const CommandSpec* c : commands()) {
+        Line summary(c->summary);
         if (!c->aliases.empty()) {
             std::string list;
             for (const std::string& a : c->aliases) {
                 list += list.empty() ? a : ", " + a;
             }
-            out << std::format(" (alias: {})", list);
+            summary.append({std::format(" (alias: {})", list), Style::dim});
         }
-        out << '\n';
+        t.row({styled(Style::key, c->name), std::move(summary)});
     }
-    out << "Type 'help <command>' for details.\n";
+    out << "Type '" << styled(Style::key, "help <command>") << "' for details.\n";
 }
 
-void CommandRegistry::write_help(std::ostream& out, const CommandSpec& spec) const {
-    out << "usage: " << usage(spec) << '\n';
+void CommandRegistry::write_help(Doc& out, const CommandSpec& spec) const {
+    out << "usage: " << styled(Style::key, usage(spec)) << '\n';
     if (!spec.summary.empty()) {
         out << "  " << spec.summary << '\n';
     }
@@ -810,12 +806,12 @@ void CommandRegistry::write_help(std::ostream& out, const CommandSpec& spec) con
     if (!spec.aliases.empty()) {
         out << "aliases:";
         for (const std::string& a : spec.aliases) {
-            out << ' ' << a;
+            out << ' ' << styled(Style::key, a);
         }
         out << '\n';
     }
     if (spec.kind == CommandKind::action) {
-        out << "Changes the simulation; recorded in the session log for replay.\n";
+        out << styled(Style::dim, "Changes the simulation; recorded in the session log for replay.") << '\n';
     }
 
     // One label column across both sections so they line up.
@@ -830,7 +826,7 @@ void CommandRegistry::write_help(std::ostream& out, const CommandSpec& spec) con
         if (args.empty()) {
             return;
         }
-        out << title << ":\n";
+        out << styled(Style::heading, std::string(title) + ":") << '\n';
         for (const ArgSpec& a : args) {
             std::string text = a.help;
             if (!a.choices.empty()) {
@@ -845,8 +841,8 @@ void CommandRegistry::write_help(std::ostream& out, const CommandSpec& spec) con
             } else if (!options && !a.required) {
                 text += " (optional)";
             }
-            out << std::format("  {:<{}}  {:<12}  {}\n", options ? "--" + a.name : arg_label(a), width,
-                               type_name(a.type), text);
+            out << "  " << styled(Style::key, std::format("{:<{}}", options ? "--" + a.name : arg_label(a), width))
+                << styled(Style::dim, std::format("  {:<12}", type_name(a.type))) << "  " << text << '\n';
         }
     };
     write_args("arguments", spec.positionals, false);

@@ -25,12 +25,12 @@ struct Shell {
 
     // Runs one line; returns its output (errors included).
     std::string run(std::string_view line) {
-        std::ostringstream out;
+        sim::Doc out;
         const sim::LineResult r = bus.execute_line(line, session, out);
         if (!r.ok()) {
             out << "error: " << r.error << "\n";
         }
-        return out.str();
+        return sim::to_text(out);
     }
 };
 
@@ -92,4 +92,83 @@ TEST_CASE("shell trade and crew commands") {
     CHECK(contains(sh.run("refuel 1"), "reaction mass"));
     CHECK(contains(sh.run("hire 999999"), "nobody with id"));
     CHECK(contains(sh.run("books"), "trade"));
+}
+
+namespace {
+
+// All spans of one style in a command's output, in order.
+std::vector<std::string> spans_of(const sim::Doc& doc, sim::Style style) {
+    std::vector<std::string> out;
+    for (const sim::Line& row : sim::layout(doc)) {
+        for (const sim::Span& s : row.spans) {
+            if (s.style == style) {
+                out.push_back(s.text);
+            }
+        }
+    }
+    return out;
+}
+
+} // namespace
+
+TEST_CASE("shell output is styled and tabular") {
+    Shell sh;
+    sh.run("new secondhand --seed 3");
+    sim::Doc market;
+    REQUIRE(sh.bus.execute_line("market", sh.session, market).ok());
+    CHECK(std::holds_alternative<sim::TextTable>(market.blocks().back()));
+    CHECK(spans_of(market, sim::Style::key).front() == "water");
+
+    sim::Doc plot;
+    REQUIRE(sh.bus.execute_line("plot vesta_dock --within 25d", sh.session, plot).ok());
+    CHECK(spans_of(plot, sim::Style::good) == std::vector<std::string>{"GO"});
+
+    // A missed instalment is urgent everywhere it shows.
+    sim::Doc advance;
+    sh.bus.execute_line("advance 8d --force", sh.session, advance);
+    CHECK_FALSE(spans_of(advance, sim::Style::urgent).empty());
+    sim::Doc status;
+    sh.bus.execute_line("status", sh.session, status);
+    CHECK(spans_of(status, sim::Style::urgent) == std::vector<std::string>{"(1 missed!)"});
+}
+
+TEST_CASE("status banner summarizes the player's position") {
+    Shell sh;
+    CHECK_FALSE(status_banner(sh.session).has_value());
+    sh.run("new secondhand --seed 3");
+    auto b = status_banner(sh.session);
+    REQUIRE(b.has_value());
+    CHECK(b->cash == 1850);
+    REQUIRE(b->loan.has_value());
+    CHECK(b->loan->instalment == 4200);
+    CHECK(b->loan->until_due == sim::days(7));
+    CHECK(b->loan->missed == 0);
+    REQUIRE(b->ship.has_value());
+    CHECK(b->ship->docked_at == "Ceres Station");
+    CHECK(b->ship->crew == 1);
+    CHECK(b->ship->berths == 4);
+    CHECK(b->ship->reaction_mass_pct == doctest::Approx(35.0));
+    CHECK(b->ship->hull_pct == doctest::Approx(62.0));
+
+    std::string text;
+    for (const sim::Line& seg : banner_segments(*b)) {
+        text += seg.text() + " | ";
+    }
+    CHECK(text == "2350-03-14 00:00 | Cash 1,850 cr | Loan 4,200 cr due 03-21 in 7d 0h | "
+                  "Dustkicker docked at Ceres Station | RM 35% | Hull 62% | Crew 1/4 | ");
+
+    sh.run("pay 1000");
+    sh.run("go hollow_nail");
+    b = status_banner(sh.session);
+    CHECK(b->loan->instalment == 3200);
+    CHECK_FALSE(b->ship->docked_at.has_value());
+    CHECK(b->ship->destination == "Hollow Nail");
+    CHECK(b->ship->remaining > sim::Duration{});
+}
+
+TEST_CASE("journal lines mark urgent entries") {
+    const Message m{sim::Time{} + sim::days(72), MessageKind::finance, true, "Missed a payment"};
+    CHECK(journal_line(m).text() == "  [2350-03-14 00:00] finance ! Missed a payment");
+    CHECK(journal_line(m, true).text() == "03-14 00:00 ! Missed a payment");
+    CHECK(journal_line(m).spans.back().style == sim::Style::urgent);
 }
