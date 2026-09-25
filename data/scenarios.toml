@@ -2,8 +2,9 @@
 name = "Secondhand"
 description = """
 You bought the Dustkicker from a Ceres broker who swore she only needed new seals.
-She needs new everything. The loan shark wants his money every Monday, the tank is a
-third full, and you are the whole crew. Find work."""
+She needs new everything. Ceres Station Credit carries the paper: interest only for
+eight weeks, then 1,000 cr every week until it's paid or they take the ship. The tank
+is a third full, and you are the whole crew. Find work."""
 start_date = "2350-03-14"
 start_station = "ceres_station"
 ship_class = "mule_hauler"
@@ -12,7 +13,14 @@ company_name = "Dustkicker Hauling"
 cash = 1850
 reaction_mass_fraction = 0.35
 hull_condition = 0.62
-loan_principal = 380000
-loan_weekly_payment = 4200
+# The loan: small enough that a careful captain can carry it, big enough to hurt. Interest only
+# for the first 8 weeks while you find your feet, then the real instalment (640 cr of principal at
+# first; paid off in ~3 years). 30 bp/week is ~17 % APR. Tuned by simulation, not guesswork:
+# expanse/tests/balance_tests.cpp plays this start with scripted captains; at 1,200 cr/week the
+# careful one loses the ship on some seeds, at 1,000 it survives every one with a thin margin.
+loan_principal = 120000
+loan_weekly_interest_bp = 30
+loan_interest_only_weeks = 8
+loan_weekly_payment = 1000
 loan_missed_payment_limit = 3
 provision_days = 21

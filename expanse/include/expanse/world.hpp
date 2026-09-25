@@ -147,12 +147,13 @@ struct Loan {
     Credits paid_since_due = 0;            // voluntary payments counted toward the next instalment
     Credits interest_charged = 0;          // lifetime, for the books
     sim::EventId due_event;                // pending LoanPaymentDue
+    sim::Time interest_only_until{};       // instalments due before this are interest only
 
     static constexpr auto fields(auto& self) {
         return std::tie(self.borrower, self.lender, self.balance, self.weekly_payment,
                         self.missed_payments, self.missed_payment_limit, self.next_due,
                         self.weekly_interest_bp, self.paid_since_due, self.interest_charged,
-                        self.due_event);
+                        self.due_event, self.interest_only_until);
     }
 };
 
@@ -306,6 +307,6 @@ std::vector<std::uint8_t> save_world(const World& world);
 World load_world(std::span<const std::uint8_t> bytes, const Content& content);
 std::uint64_t world_hash(const World& world);
 
-inline constexpr std::uint32_t world_schema_version = 1;
+inline constexpr std::uint32_t world_schema_version = 2; // 2: Loan::interest_only_until
 
 } // namespace expanse

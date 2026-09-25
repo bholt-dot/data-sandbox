@@ -51,7 +51,8 @@ World new_game(const Content& content, std::string_view scenario_key, std::uint6
 
     if (sc.loan_principal > 0) {
         open_loan(w, w.player, sc.start_station, sc.loan_principal, sc.loan_weekly_payment,
-                  sc.loan_missed_payment_limit, start + sim::days(7));
+                  sc.loan_missed_payment_limit, start + sim::days(7), sc.loan_weekly_interest_bp,
+                  start + sim::days(7 * static_cast<std::int64_t>(sc.loan_interest_only_weeks)));
     }
 
     // The captain, provisions aboard, and job-seekers on every dock.
