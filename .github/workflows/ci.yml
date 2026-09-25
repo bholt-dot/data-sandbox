@@ -13,6 +13,7 @@ jobs:
       matrix:
         include:
           - { name: gcc-sanitize, cxx: g++,     preset: dev }
+          - { name: gcc-release,   cxx: g++,     preset: release }
           - { name: clang-release, cxx: clang++, preset: release }
     name: ${{ matrix.name }}
     steps:

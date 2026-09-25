@@ -12,7 +12,9 @@ if(MSVC)
 else()
   target_compile_options(sim_options INTERFACE
     -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion
-    -Wnon-virtual-dtor -Wold-style-cast -Woverloaded-virtual -Wnull-dereference
+    # -Wnull-dereference is deliberately omitted: GCC >= 12 emits false positives from inside
+    # libstdc++ (string/vector) at -O2, which breaks -Werror release builds. ASan covers real cases.
+    -Wnon-virtual-dtor -Wold-style-cast -Woverloaded-virtual
     -Wdouble-promotion -Wimplicit-fallthrough
     $<$<BOOL:${SIM_WARNINGS_AS_ERRORS}>:-Werror>)
 endif()
