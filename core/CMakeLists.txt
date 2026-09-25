@@ -1,9 +1,12 @@
 add_library(simcore
   src/time.cpp
+  src/data_node.cpp
+  src/defs.cpp
 )
 add_library(sim::core ALIAS simcore)
 target_include_directories(simcore PUBLIC include)
 sim_configure_target(simcore)
+target_link_libraries(simcore PRIVATE tomlplusplus::tomlplusplus)  # confined to src/data_node.cpp
 
 sim_add_test(simcore_tests
   SOURCES
@@ -12,4 +15,5 @@ sim_add_test(simcore_tests
     tests/table_tests.cpp
     tests/rng_tests.cpp
     tests/scheduler_tests.cpp
+    tests/defs_tests.cpp
   LIBS sim::core)
