@@ -15,6 +15,7 @@ void dispatch(const Content& content, World& world, sim::Scheduler<Event>& sched
             if constexpr (std::is_same_v<E, DailyTick>) {
                 systems::daily_economy(content, world);
                 systems::daily_finance(content, world);
+                systems::daily_crew(content, world);
             } else if constexpr (std::is_same_v<E, WeeklyTick>) {
                 systems::weekly_crew(content, world);
             } else if constexpr (std::is_same_v<E, LoanPaymentDue>) {

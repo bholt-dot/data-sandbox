@@ -1,0 +1,77 @@
+# Crew origins for the hiring pool. A dock draws most job-seekers from origins of its own
+# faction and a few from everywhere else. wage_multiplier scales what they ask for: Belters work
+# cheap because they have to; inner-planet hands expect inner-planet pay.
+# Names are "given family", picked independently. Add origins or names freely.
+
+[crew_origin.belter]
+name = "Belter"
+faction = "belt"
+wage_multiplier = 0.8
+given_names = [
+  "Ketu", "Imre", "Sabeena", "Oko", "Taavi", "Lusa", "Ndidi", "Pello", "Rin", "Adaeze",
+  "Juno", "Mateus", "Yusra", "Kwame", "Esi", "Bex", "Tomasz", "Priya", "Ilse", "Dace",
+  "Nuno", "Seren", "Aroha", "Wen", "Fenna", "Oskari", "Mireille", "Tamsin",
+]
+family_names = [
+  "Okonkwo-Sato", "Vasquez", "Lindqvist", "Tembo", "Achterberg", "Ferreira", "Nakashima",
+  "Oduya", "Kowalczyk", "Mbatha", "Rautio", "Chaudhry", "Szabo", "Delacroix-Ng", "Abara",
+  "Halloran", "Petrossian", "Quispe", "Tuilagi", "Marangoni", "Ostrowski", "Adeyemi",
+  "Kallio", "Moreau", "Ruiz-Tan",
+]
+backgrounds = [
+  "Born on Ceres; has never felt a full g.",
+  "Ex-ice miner, lost two fingers to a jammed winch.",
+  "Grew up on a water hauler and knows every valve by feel.",
+  "Left a family rock crew after a feud over shares.",
+  "Ran cargo for a union co-op until it folded.",
+  "Walked off a company miner over unpaid hazard bonuses.",
+  "Long spin-gravity bones, laughs easily, sleeps anywhere.",
+  "Keeps a tiny algae garden growing in a ration tin.",
+  "Sends half of every pay packet to a sister on Pallas.",
+]
+
+[crew_origin.martian]
+name = "Martian"
+faction = "mars"
+wage_multiplier = 1.35
+given_names = [
+  "Harriet", "Desmond", "Anjali", "Callum", "Yevgenia", "Tobias", "Marisol", "Hideo",
+  "Beatrix", "Rafael", "Ingrid", "Solomon", "Leonie", "Arjun", "Constance", "Emil", "Farah",
+  "Gideon", "Ottilie", "Lucan",
+]
+family_names = [
+  "Castellanos", "Whitcombe", "Iyer", "Brandt", "Okafor", "Lindgren", "Takeda",
+  "Reyes-Morrow", "Hollis", "Achebe", "Valdivia", "Pryce", "Kuroda", "Mendel", "Wexley",
+  "Novak", "Sandoval", "Harcourt", "Oyeleke",
+]
+backgrounds = [
+  "Navy washout; still squares the bunk every morning.",
+  "Terraforming tech who got tired of waiting a century for air.",
+  "Ran out of money on a belt contract and needs passage home.",
+  "Quiet and precise; hates the smell of Belter recyclers.",
+  "Trained for 0.38 g and complains about everything else.",
+  "Former freight pilot for a Valles Marineris shipping line.",
+]
+
+[crew_origin.earther]
+name = "Earther"
+faction = "earth"
+wage_multiplier = 1.25
+given_names = [
+  "Amara", "Luca", "Siobhan", "Dmitri", "Mei", "Oluwaseun", "Clara", "Mateo", "Hana",
+  "Rohan", "Freya", "Samir", "Beatriz", "Jonah", "Anouk", "Kofi", "Ines", "Viktor",
+  "Leilani", "Aditya",
+]
+family_names = [
+  "Gallagher", "Ivanova", "Chen-Albright", "Mukherjee", "Oliveira", "Schreiber", "Nwosu",
+  "Castellano", "Park", "Lemaire", "Haddad", "Johansson", "Okoro", "Fitzgerald", "Mendoza",
+  "Tanaka", "Abernathy", "Varga", "Rossi", "Kaur",
+]
+backgrounds = [
+  "Came up the well on a basic-assistance lottery and never went back.",
+  "Ex-navy medic, discharged for reasons they won't discuss.",
+  "Grew up in a flooded coastal arcology; hates open water.",
+  "Burned out of a corporate job on Luna and wants somewhere quiet.",
+  "Struggles in low g, but has good hands.",
+  "Owes money to people on Earth and prefers to stay far away.",
+]

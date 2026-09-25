@@ -1,6 +1,7 @@
 #include "expanse/scenario.hpp"
 
 #include "expanse/calendar.hpp"
+#include "expanse/crew.hpp"
 
 #include <stdexcept>
 #include <string>
@@ -43,7 +44,7 @@ World new_game(const Content& content, std::string_view scenario_key, std::uint6
     ship.location = Docked{sc.start_station};
     ship.reaction_mass_t = cls.reaction_mass_capacity_t * sc.reaction_mass_fraction;
     ship.hull_condition = sc.hull_condition;
-    w.ships.insert(std::move(ship));
+    const ShipId ship_id = w.ships.insert(std::move(ship));
 
     if (sc.loan_principal > 0) {
         Loan loan;
@@ -57,6 +58,9 @@ World new_game(const Content& content, std::string_view scenario_key, std::uint6
         w.scheduler.schedule_at(loan.next_due, LoanPaymentDue{loan_id},
                                 {priority_finance, player_event});
     }
+
+    // The captain, provisions aboard, and job-seekers on every dock.
+    crew::start_new_game(content, w, sc, ship_id);
 
     // Recurring systems, on a grid anchored at midnight of the epoch.
     w.scheduler.add_periodic(sim::days(1), DailyTick{}, {sim::Time{}, priority_daily, 0});

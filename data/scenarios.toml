@@ -15,3 +15,4 @@ hull_condition = 0.62
 loan_principal = 380000
 loan_weekly_payment = 4200
 loan_missed_payment_limit = 3
+provision_days = 21
