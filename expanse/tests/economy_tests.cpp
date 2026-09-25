@@ -598,14 +598,20 @@ TEST_CASE("secondhand has a thin but real starter trade route") {
     CHECK(best->margin() < 0.05 * static_cast<double>(sc.loan_principal));
     CHECK(best->margin() < 0.5 * (best->cost + best->fuel_cost));
 
-    // The same after the markets have settled to their equilibrium.
+    // The same after the markets have settled to their equilibrium (the Ceres cluster).
     World settled = new_game(c, "secondhand", 1);
     run_days(c, settled, 60);
-    const auto later = best_route(c, settled, 2.0, unlimited);
+    const auto later = best_route(c, settled, 0.5, unlimited);
     REQUIRE(later);
     MESSAGE("settled route: " << describe_route(c, *later));
     CHECK(later->margin() > 0.0);
     CHECK(later->margin() < 0.5 * (later->cost + later->fuel_cost));
+
+    // Long producer -> consumer hauls pay well but need capital a new captain doesn't have.
+    const auto long_haul = best_route(c, settled, 2.5, unlimited);
+    REQUIRE(long_haul);
+    MESSAGE("long haul: " << describe_route(c, *long_haul));
+    CHECK(long_haul->cost > 50.0 * static_cast<double>(sc.cash));
 
     // Cash on hand at the start.
     const auto poor = best_route(c, w, 1.5, static_cast<double>(sc.cash));

@@ -1,0 +1,50 @@
+# The Ceres cluster: small rock-hopper outposts on Ceres' own orbit, a few degrees ahead of or
+# behind it. Sharing the orbit keeps them within ~0.1-0.3 AU of Ceres Station all the time (the
+# rest of the belt drifts 2-6 AU away for years at a stretch), so a broke hauler always has a
+# short, cheap run available. Elements copy Ceres (asteroids.toml) except the mean anomaly.
+# Fictional locations; ignoring perturbations, the spacing is constant.
+
+[station.hollow_nail]
+name = "Hollow Nail"
+body = "sun"
+orbit = { a_au = 2.7659565, e = 0.0797602, i_deg = 10.58671, node_deg = 80.40696, peri_deg = 73.15069, mean_anomaly_deg = 8.840 }
+faction = "belt"
+population = 1200
+docking_fee = 25
+market = [
+  { commodity = "ore", production = 60, stock = 3600 },
+  { commodity = "water", consumption = 6, stock = 180 },
+  { commodity = "food", consumption = 2.5, stock = 75 },
+  { commodity = "oxygen", consumption = 1.5, stock = 45 },
+  { commodity = "parts", consumption = 0.3, stock = 9 },
+]
+
+[station.dagu_rock]
+name = "Dagu Rock"
+body = "sun"
+orbit = { a_au = 2.7659565, e = 0.0797602, i_deg = 10.58671, node_deg = 80.40696, peri_deg = 73.15069, mean_anomaly_deg = 3.340 }
+faction = "belt"
+population = 2500
+docking_fee = 35
+market = [
+  { commodity = "water", production = 140, consumption = 10, stock = 8000 },
+  { commodity = "oxygen", production = 20, consumption = 3, stock = 1000 },
+  { commodity = "food", consumption = 5, stock = 150 },
+  { commodity = "parts", consumption = 0.6, stock = 18 },
+  { commodity = "medical", consumption = 0.08, stock = 2.5 },
+]
+
+[station.sakai_drift]
+name = "Sakai Drift"
+body = "sun"
+orbit = { a_au = 2.7659565, e = 0.0797602, i_deg = 10.58671, node_deg = 80.40696, peri_deg = 73.15069, mean_anomaly_deg = 12.340 }
+faction = "independent"
+population = 3800
+docking_fee = 45
+market = [
+  { commodity = "ore", consumption = 45, stock = 1300 },
+  { commodity = "metals", production = 12, stock = 700 },
+  { commodity = "water", consumption = 12, stock = 360 },
+  { commodity = "food", consumption = 7, stock = 210 },
+  { commodity = "oxygen", consumption = 4, stock = 120 },
+]

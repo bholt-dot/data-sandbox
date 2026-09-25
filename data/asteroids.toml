@@ -1,0 +1,80 @@
+# Dwarf planets and asteroids: heliocentric, J2000 ecliptic axes, mean anomaly at J2000.
+#
+# Elements are MPC osculating elements as shipped in Stellarium's data files:
+#   [A] stellarium-0-10-5 data/ssystem.ini, epoch JD 2454200.5 (2007-04-10)
+#   [B] Stellarium master data/ssystem_minor.ini, epoch JD 2461000.5 (2025-11-21)
+# The mean anomaly was carried to J2000 as M = M_epoch - n (epoch - J2000), mod 360, with the
+# listed mean motion n ([A]: n = 0.9856076686 / a^1.5 deg/day). [A] is used where available
+# (shorter propagation); for Ceres, Pallas, Juno and Vesta the two sources then agree to within
+# 1.9, 3.8, 1.3 and 1.0 deg of heliocentric J2000 position. Treat asteroid phases as good to a
+# few degrees; a, e, i, node and peri are good to ~0.3%/0.5 deg.
+#
+# GM: Ceres (Park et al. 2016, Dawn), Vesta (Konopliv et al. 2014, Dawn), Eros (NEAR, Miller et
+# al. 2002); the others are GM = G * published mass and are approximate (+-5-15%: Pallas,
+# Hygiea, Juno, Psyche). Radii are mean radii (volume-equivalent).
+
+[body.ceres]
+name = "Ceres"
+kind = "dwarf_planet"
+parent = "sun"
+gm_km3_s2 = 62.6284
+radius_km = 469.7
+# [A]; M_J2000 = 6.840 ([B] gives 5.253)
+orbit = { a_au = 2.7659565, e = 0.0797602, i_deg = 10.58671, node_deg = 80.40696, peri_deg = 73.15069, mean_anomaly_deg = 6.840 }
+
+[body.pallas]
+name = "Pallas"
+kind = "asteroid"
+parent = "sun"
+gm_km3_s2 = 13.6
+radius_km = 256
+# [A]; M_J2000 = 352.523 ([B] gives 349.971)
+orbit = { a_au = 2.7716684, e = 0.2307589, i_deg = 34.84182, node_deg = 173.13579, peri_deg = 310.34481, mean_anomaly_deg = 352.523 }
+
+[body.juno]
+name = "Juno"
+kind = "asteroid"
+parent = "sun"
+gm_km3_s2 = 1.8
+radius_km = 127
+# [A]; M_J2000 = 240.604 ([B] gives 242.545)
+orbit = { a_au = 2.6678842, e = 0.2580231, i_deg = 12.97036, node_deg = 170.12007, peri_deg = 247.84192, mean_anomaly_deg = 240.604 }
+
+[body.vesta]
+name = "Vesta"
+kind = "asteroid"
+parent = "sun"
+gm_km3_s2 = 17.288
+radius_km = 262.7
+# [A]; M_J2000 = 340.580 ([B] gives 338.808)
+orbit = { a_au = 2.3619563, e = 0.0893657, i_deg = 7.13380, node_deg = 103.91841, peri_deg = 150.18003, mean_anomaly_deg = 340.580 }
+
+[body.hygiea]
+name = "Hygiea"
+kind = "asteroid"
+parent = "sun"
+gm_km3_s2 = 5.55
+radius_km = 216.5
+# [B], n = 0.17649669 deg/day
+orbit = { a_au = 3.1475914, e = 0.1082238, i_deg = 3.83294, node_deg = 283.12164, peri_deg = 312.60583, mean_anomaly_deg = 347.826 }
+
+# M-type, metal-rich: the setting's natural smelter.
+[body.psyche]
+name = "Psyche"
+kind = "asteroid"
+parent = "sun"
+gm_km3_s2 = 1.53
+radius_km = 111
+# [B], n = 0.19719267 deg/day
+orbit = { a_au = 2.9233145, e = 0.1343462, i_deg = 3.09729, node_deg = 150.00988, peri_deg = 229.75341, mean_anomaly_deg = 336.084 }
+
+# Near-Earth (Amor) asteroid, 1.13-1.78 AU. Close approaches to Earth and Mars make the
+# 26-year back-propagation of its phase the least certain of the set (several degrees).
+[body.eros]
+name = "Eros"
+kind = "asteroid"
+parent = "sun"
+gm_km3_s2 = 0.0004463
+radius_km = 8.42
+# [B], n = 0.5597753 deg/day
+orbit = { a_au = 1.458121, e = 0.222836, i_deg = 10.82847, node_deg = 304.27008, peri_deg = 178.92978, mean_anomaly_deg = 57.599 }

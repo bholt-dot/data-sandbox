@@ -1,0 +1,35 @@
+# Inner-system stations (the original starter stations are in stations.toml).
+# Market numbers are t/day and t at scenario start. The inner planets export food, medical
+# supplies and parts, and import water ice and metals from the Belt.
+
+# Geostationary: a_km = 42164 in Earth's equatorial plane, which in J2000 ecliptic axes is
+# i = 23.44 deg (the obliquity) with the node at the vernal equinox.
+[station.earth_orbital]
+name = "Earth Orbital Exchange"
+body = "earth"
+orbit = { a_km = 42164, e = 0.0, i_deg = 23.44, node_deg = 0.0, peri_deg = 0.0, mean_anomaly_deg = 0.0 }
+faction = "earth"
+population = 120000
+docking_fee = 600
+market = [
+  { commodity = "food", production = 250, consumption = 30, stock = 12000 },
+  { commodity = "medical", production = 8, consumption = 1, stock = 500 },
+  { commodity = "parts", production = 30, consumption = 10, stock = 2000 },
+  { commodity = "water", consumption = 150, stock = 6000 },
+  { commodity = "metals", consumption = 60, stock = 2500 },
+]
+
+[station.luna_yards]
+name = "Luna Yards"
+body = "luna"
+faction = "earth"
+population = 1800000
+docking_fee = 300
+market = [
+  { commodity = "parts", production = 40, consumption = 10, stock = 2500 },
+  { commodity = "medical", production = 4, consumption = 1, stock = 250 },
+  { commodity = "oxygen", production = 50, consumption = 40, stock = 2000 },
+  { commodity = "metals", consumption = 80, stock = 3000 },
+  { commodity = "water", consumption = 120, stock = 5000 },
+  { commodity = "food", consumption = 40, stock = 1500 },
+]

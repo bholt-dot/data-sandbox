@@ -41,7 +41,7 @@ namespace expanse::economy {
 
 namespace tuning {
 inline constexpr double cover_days = 60.0;          // target stock, in days of the larger flow
-inline constexpr double min_reference_flow = 1.0;   // t/day, for entries with tiny/no flows
+inline constexpr double min_reference_flow = 0.05;  // t/day; floor for entries with no flows (small outposts keep small targets)
 inline constexpr double elasticity = 0.5;           // price ~ (target/stock)^elasticity; in (0, 1)
 inline constexpr double min_multiplier = 0.25;      // of base_price
 inline constexpr double max_multiplier = 4.0;       // of base_price

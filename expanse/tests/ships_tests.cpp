@@ -385,7 +385,14 @@ TEST_CASE("all destinations from the start") {
     CHECK(list.size() == c.table<StationDef>().size() - 1);
     for (const CoursePreview& p : list) {
         CHECK(p.destination != station("ceres_station"));
-        CHECK(p.feasible()); // the Secondhand start can reach every station at 0.1 g
+        CHECK(p.status != CourseStatus::unknown_ship);
+    }
+    // The Secondhand start reaches everything in the belt and inner system at 0.1 g (the outer
+    // system may be out of reach on a third of a tank).
+    for (const char* key : {"vesta_dock", "pallas_refinery", "tycho_station", "mars_highport",
+                            "hollow_nail", "dagu_rock", "sakai_drift"}) {
+        CAPTURE(key);
+        CHECK(plot_course(c, w, player_ship(w), station(key), {0.1}).feasible());
     }
 }
 

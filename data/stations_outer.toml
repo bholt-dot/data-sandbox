@@ -1,0 +1,89 @@
+# Outer-planet stations. Ganymede's domes feed the outer system; the icy moons sell water;
+# everything out here imports medical supplies and parts.
+
+[station.ganymede_agridomes]
+name = "Ganymede Agridomes"
+body = "ganymede"
+faction = "earth"
+population = 1100000
+docking_fee = 180
+market = [
+  { commodity = "food", production = 420, consumption = 90, stock = 20000 },
+  { commodity = "water", production = 200, consumption = 180, stock = 10000 },
+  { commodity = "oxygen", production = 40, consumption = 30, stock = 2000 },
+  { commodity = "metals", consumption = 20, stock = 800 },
+  { commodity = "parts", consumption = 10, stock = 400 },
+  { commodity = "medical", consumption = 1, stock = 60 },
+]
+
+[station.europa_iceworks]
+name = "Europa Iceworks"
+body = "europa"
+faction = "independent"
+population = 60000
+docking_fee = 90
+market = [
+  { commodity = "water", production = 300, consumption = 20, stock = 25000 },
+  { commodity = "oxygen", production = 30, stock = 1500 },
+  { commodity = "food", consumption = 20, stock = 500 },
+  { commodity = "parts", consumption = 3, stock = 100 },
+  { commodity = "medical", consumption = 0.4, stock = 15 },
+]
+
+# Martian navy yard.
+[station.callisto_yards]
+name = "Callisto Yards"
+body = "callisto"
+faction = "mars"
+population = 150000
+docking_fee = 350
+market = [
+  { commodity = "parts", production = 25, consumption = 5, stock = 1500 },
+  { commodity = "metals", consumption = 70, stock = 2500 },
+  { commodity = "water", consumption = 40, stock = 3000 },
+  { commodity = "food", consumption = 25, stock = 900 },
+  { commodity = "medical", consumption = 0.8, stock = 50 },
+]
+
+[station.titan_port]
+name = "Titan Port"
+body = "titan"
+faction = "independent"
+population = 45000
+docking_fee = 140
+market = [
+  { commodity = "water", production = 80, consumption = 20, stock = 5000 },
+  { commodity = "oxygen", production = 25, consumption = 15, stock = 1200 },
+  { commodity = "food", consumption = 15, stock = 600 },
+  { commodity = "parts", consumption = 4, stock = 150 },
+  { commodity = "medical", consumption = 0.5, stock = 20 },
+]
+
+# Skims the south-polar plumes: the cheapest water in the Saturn system.
+[station.enceladus_wellhead]
+name = "Enceladus Wellhead"
+body = "enceladus"
+faction = "belt"
+population = 8000
+docking_fee = 50
+market = [
+  { commodity = "water", production = 250, stock = 15000 },
+  { commodity = "food", consumption = 4, stock = 120 },
+  { commodity = "parts", consumption = 1.5, stock = 40 },
+  { commodity = "medical", consumption = 0.2, stock = 6 },
+]
+
+# The edge of settled space.
+[station.titania_relay]
+name = "Titania Relay"
+body = "titania"
+faction = "independent"
+population = 3000
+docking_fee = 200
+market = [
+  { commodity = "water", production = 20, consumption = 5, stock = 1500 },
+  { commodity = "oxygen", consumption = 3, stock = 300 },
+  { commodity = "food", consumption = 3, stock = 150 },
+  { commodity = "parts", consumption = 1, stock = 40 },
+  { commodity = "medical", consumption = 0.1, stock = 5 },
+]

@@ -1,13 +1,40 @@
-# Bodies on Keplerian rails. Elements are heliocentric/parent-relative at J2000.
-# Planets: Standish, "Keplerian Elements for Approximate Positions of the Major Planets" (JPL),
-# converted as peri = varpi - node, M = L - varpi. Asteroid mean anomalies are approximate
-# (placeholder until the full dataset bean lands).
+# The Sun and the planets. Moons are in moons.toml, small bodies in asteroids.toml.
+#
+# All orbits are fixed Keplerian ellipses at epoch J2000, in J2000 mean ecliptic & equinox axes.
+# There are no element rates, so positions drift from reality over the centuries to 2350 (a few
+# degrees of orbital longitude for the outer planets); it is the right sky, not an ephemeris.
+#
+# Planet elements: E. M. Standish, "Keplerian Elements for Approximate Positions of the Major
+# Planets" (JPL SSD), Table 1 (1800-2050 AD), converted as peri = varpi - node, M = L - varpi.
+# Earth's row is the Earth-Moon barycentre. Cross-checked against VSOP87 (astronomy-engine 2.1)
+# at J2000: every planet within 0.15 deg of heliocentric longitude.
+#
+# GM: JPL SSD planetary physical parameters / DE440. Planets that host moons use the planet-only GM
+# (not the system GM) so moon orbits come out right. Radii are IAU mean radii (Archinal et al.
+# 2018). The game uses only the parent's GM for an orbit, so planetary periods are 0.001-0.06%
+# off the true sidereal periods.
 
 [body.sun]
 name = "Sol"
 kind = "star"
 gm_km3_s2 = 1.32712440018e11
 radius_km = 695700
+
+[body.mercury]
+name = "Mercury"
+kind = "planet"
+parent = "sun"
+gm_km3_s2 = 22031.868551
+radius_km = 2439.4
+orbit = { a_au = 0.38709927, e = 0.20563593, i_deg = 7.00497902, node_deg = 48.33076593, peri_deg = 29.12703035, mean_anomaly_deg = 174.79252722 }
+
+[body.venus]
+name = "Venus"
+kind = "planet"
+parent = "sun"
+gm_km3_s2 = 324858.592
+radius_km = 6051.8
+orbit = { a_au = 0.72333566, e = 0.00677672, i_deg = 3.39467605, node_deg = 76.67984255, peri_deg = 54.92262463, mean_anomaly_deg = 50.37663232 }
 
 [body.earth]
 name = "Earth"
@@ -16,14 +43,6 @@ parent = "sun"
 gm_km3_s2 = 398600.4418
 radius_km = 6371
 orbit = { a_au = 1.00000261, e = 0.01671123, i_deg = -0.00001531, node_deg = 0.0, peri_deg = 102.93768193, mean_anomaly_deg = -2.47311027 }
-
-[body.luna]
-name = "Luna"
-kind = "moon"
-parent = "earth"
-gm_km3_s2 = 4902.8
-radius_km = 1737
-orbit = { a_km = 384400, e = 0.0549, i_deg = 5.145, node_deg = 125.08, peri_deg = 318.15, mean_anomaly_deg = 135.27 }
 
 [body.mars]
 name = "Mars"
@@ -41,26 +60,26 @@ gm_km3_s2 = 1.26686534e8
 radius_km = 69911
 orbit = { a_au = 5.20288700, e = 0.04838624, i_deg = 1.30439695, node_deg = 100.47390909, peri_deg = -85.74542926, mean_anomaly_deg = 19.66796068 }
 
-[body.ceres]
-name = "Ceres"
-kind = "dwarf_planet"
+[body.saturn]
+name = "Saturn"
+kind = "planet"
 parent = "sun"
-gm_km3_s2 = 62.6
-radius_km = 470
-orbit = { a_au = 2.7675, e = 0.0758, i_deg = 10.59, node_deg = 80.31, peri_deg = 73.60, mean_anomaly_deg = 6.0 }
+gm_km3_s2 = 37931206.234
+radius_km = 58232
+orbit = { a_au = 9.53667594, e = 0.05386179, i_deg = 2.48599187, node_deg = 113.66242448, peri_deg = -21.06354617, mean_anomaly_deg = -42.64463408 }
 
-[body.vesta]
-name = "Vesta"
-kind = "asteroid"
+[body.uranus]
+name = "Uranus"
+kind = "planet"
 parent = "sun"
-gm_km3_s2 = 17.3
-radius_km = 263
-orbit = { a_au = 2.3615, e = 0.0887, i_deg = 7.14, node_deg = 103.85, peri_deg = 151.20, mean_anomaly_deg = 150.0 }
+gm_km3_s2 = 5793951.256
+radius_km = 25362
+orbit = { a_au = 19.18916464, e = 0.04725744, i_deg = 0.77263783, node_deg = 74.01692503, peri_deg = 96.93735127, mean_anomaly_deg = 142.28382821 }
 
-[body.pallas]
-name = "Pallas"
-kind = "asteroid"
+[body.neptune]
+name = "Neptune"
+kind = "planet"
 parent = "sun"
-gm_km3_s2 = 13.6
-radius_km = 256
-orbit = { a_au = 2.7725, e = 0.2300, i_deg = 34.84, node_deg = 173.08, peri_deg = 310.05, mean_anomaly_deg = 300.0 }
+gm_km3_s2 = 6835099.97
+radius_km = 24622
+orbit = { a_au = 30.06992276, e = 0.00859048, i_deg = 1.77004347, node_deg = 131.78422574, peri_deg = -86.81946347, mean_anomaly_deg = -100.08479196 }
