@@ -57,8 +57,9 @@ TEST_CASE("shell plot and go fly the previewed course") {
     CHECK(contains(sh.run("go vesta_dock --within 25d"), "Underway"));
     CHECK(contains(sh.run("status"), "underway to Vesta Dock"));
     CHECK(contains(sh.run("go tycho_station"), "error"));
-    sh.run("advance 30d --force");
-    // Repossessed on the way (no income): further actions are refused.
+    sh.run("advance 60d --force");
+    // No income: the interest-only instalments and Vesta's dock fees drain the cash, and the
+    // ship is repossessed seven weeks in. Further actions are refused.
     CHECK(sh.session.world->game_over.has_value());
     CHECK(contains(sh.run("pay 100"), "game over"));
     // Time still runs: the belt goes on without you.

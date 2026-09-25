@@ -156,7 +156,9 @@ struct ScenarioDef {
     double reaction_mass_fraction = 1.0; // of tank capacity
     double hull_condition = 1.0;         // 0..1
     Credits loan_principal = 0;
-    Credits loan_weekly_payment = 0;
+    Credits loan_weekly_payment = 0;             // the regular instalment
+    std::uint32_t loan_weekly_interest_bp = 60;  // basis points of balance per week
+    std::uint16_t loan_interest_only_weeks = 0;  // instalments due in these first weeks are interest only
     std::uint8_t loan_missed_payment_limit = 3;
     double provision_days = 0.0; // water/food/oxygen aboard at start, in days for the start crew
 

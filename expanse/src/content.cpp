@@ -100,6 +100,10 @@ void ScenarioDef::describe(sim::Schema<ScenarioDef>& s) {
     s.optional("hull_condition", &ScenarioDef::hull_condition).range(0.0, 1.0);
     s.optional("loan_principal", &ScenarioDef::loan_principal).min(Credits{0});
     s.optional("loan_weekly_payment", &ScenarioDef::loan_weekly_payment).min(Credits{0});
+    s.optional("loan_weekly_interest_bp", &ScenarioDef::loan_weekly_interest_bp)
+        .range(std::uint32_t{0}, std::uint32_t{10000});
+    s.optional("loan_interest_only_weeks", &ScenarioDef::loan_interest_only_weeks)
+        .range(std::uint16_t{0}, std::uint16_t{520});
     s.optional("loan_missed_payment_limit", &ScenarioDef::loan_missed_payment_limit)
         .min(std::uint8_t{1});
     s.optional("provision_days", &ScenarioDef::provision_days).min(0.0);
@@ -256,6 +260,15 @@ bool Content::build(sim::Diagnostics& diags) {
         if (sc.cash < 0 && sc.loan_principal == 0) {
             diags.error(table<ScenarioDef>().source(id),
                         std::format("scenario '{}': negative cash without a loan", table<ScenarioDef>().key(id)));
+        }
+        // A loan whose regular instalment doesn't cover the interest never gets paid off.
+        const Credits interest =
+            (sc.loan_principal * static_cast<Credits>(sc.loan_weekly_interest_bp) + 9999) / 10000;
+        if (sc.loan_principal > 0 && sc.loan_weekly_payment <= interest) {
+            diags.error(table<ScenarioDef>().source(id),
+                        std::format("scenario '{}': loan_weekly_payment {} must exceed the weekly "
+                                    "interest on the principal ({})",
+                                    table<ScenarioDef>().key(id), sc.loan_weekly_payment, interest));
         }
     }
     return diags.size() == errors_before;

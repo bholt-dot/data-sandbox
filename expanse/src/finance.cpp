@@ -73,6 +73,16 @@ void close_loan(const Content& content, World& world, sim::Scheduler<Event>& sch
 
 std::string date_of(sim::Time t) { return calendar::format_date(t); }
 
+// " From 2350-05-09 your instalment rises to 1,000 cr." while the next instalment is still
+// interest only, or right after the last interest-only one; empty otherwise.
+std::string step_up_note(const Loan& loan, bool was_interest_only) {
+    if (!was_interest_only && !interest_only(loan)) {
+        return {};
+    }
+    return std::format(" From {} your instalment rises to {}.", date_of(first_regular_due(loan)),
+                       format_credits(loan.weekly_payment));
+}
+
 } // namespace
 
 // ---- Ledger -----------------------------------------------------------------------------------
@@ -235,7 +245,7 @@ DepartureCheck can_depart(const Content& content, const World& world, ShipId shi
 
 LoanId open_loan(World& world, CompanyId borrower, StationId lender, Credits principal,
                  Credits weekly_payment, std::uint8_t missed_payment_limit, sim::Time first_due,
-                 std::uint32_t weekly_interest_bp) {
+                 std::uint32_t weekly_interest_bp, sim::Time interest_only_until) {
     Loan loan;
     loan.borrower = borrower;
     loan.lender = lender;
@@ -244,6 +254,7 @@ LoanId open_loan(World& world, CompanyId borrower, StationId lender, Credits pri
     loan.missed_payment_limit = missed_payment_limit;
     loan.next_due = first_due;
     loan.weekly_interest_bp = weekly_interest_bp;
+    loan.interest_only_until = interest_only_until;
     const LoanId id = world.loans.insert(loan);
     schedule_due(world, world.scheduler, id);
     return id;
@@ -254,8 +265,22 @@ Credits weekly_interest(const Loan& loan) {
     return (loan.balance * static_cast<Credits>(loan.weekly_interest_bp) + 5000) / 10000;
 }
 
+bool interest_only(const Loan& loan) { return loan.next_due < loan.interest_only_until; }
+
+sim::Time first_regular_due(const Loan& loan) {
+    sim::Time t = loan.next_due;
+    while (t < loan.interest_only_until) {
+        t = t + sim::days(7);
+    }
+    return t;
+}
+
+Credits scheduled_instalment(const Loan& loan) {
+    return interest_only(loan) ? weekly_interest(loan) : loan.weekly_payment;
+}
+
 Credits instalment_outstanding(const Loan& loan) {
-    const Credits due = std::max<Credits>(0, loan.weekly_payment - loan.paid_since_due);
+    const Credits due = std::max<Credits>(0, scheduled_instalment(loan) - loan.paid_since_due);
     return std::min(due, loan.balance + weekly_interest(loan));
 }
 
@@ -432,14 +457,16 @@ void loan_payment_due(const Content& content, World& world, sim::Scheduler<Event
     }
     const std::string lender = lender_name(content, loan);
 
+    const bool was_interest_only = interest_only(loan);
+    const Credits scheduled = scheduled_instalment(loan); // before the interest is added
     const Credits interest = weekly_interest(loan);
     loan.balance += interest;
     loan.interest_charged += interest;
 
-    const Credits due = std::min(std::max<Credits>(0, loan.weekly_payment - loan.paid_since_due),
-                                 loan.balance);
+    const Credits due = std::min(std::max<Credits>(0, scheduled - loan.paid_since_due), loan.balance);
     Credits paid_this_week = loan.paid_since_due;
     loan.paid_since_due = 0;
+    loan.next_due = loan.next_due + sim::days(7); // messages below speak of the next instalment
 
     bool made = due == 0;
     if (!made) {
@@ -459,12 +486,13 @@ void loan_payment_due(const Content& content, World& world, sim::Scheduler<Event
         }
         const Credits to_interest = std::min(paid_this_week, interest);
         post(world, MessageKind::finance,
-             std::format("{} debited this week's instalment ({} interest, {} principal). Balance "
-                         "{}. \"Pleasure doing business, captain.\"",
-                         lender, format_credits(to_interest),
-                         format_credits(paid_this_week - to_interest), format_credits(loan.balance)));
+             std::format("{} debited this week's {}instalment ({} interest, {} principal). Balance "
+                         "{}. \"Pleasure doing business, captain.\"{}",
+                         lender, was_interest_only ? "interest-only " : "",
+                         format_credits(to_interest), format_credits(paid_this_week - to_interest),
+                         format_credits(loan.balance), step_up_note(loan, was_interest_only)));
     } else {
-        const Credits late_fee = loan.weekly_payment * late_fee_percent / 100;
+        const Credits late_fee = scheduled * late_fee_percent / 100;
         loan.balance += late_fee;
         ++loan.missed_payments;
         const Company& borrower = world.companies.at(loan.borrower);
@@ -486,15 +514,14 @@ void loan_payment_due(const Content& content, World& world, sim::Scheduler<Event
                       : "\"Happens to everyone once, captain. Don't make it a habit.\"";
         post(world, MessageKind::finance,
              std::format("MISSED LOAN PAYMENT ({} of {}). {} couldn't collect {} (you have {}). "
-                         "Late fee {} added; balance {}. {} Next instalment due {}.",
+                         "Late fee {} added; balance {}. {} Next instalment due {}.{}",
                          loan.missed_payments, loan.missed_payment_limit, lender,
                          format_credits(due), format_credits(borrower.cash),
                          format_credits(late_fee), format_credits(loan.balance), threat,
-                         date_of(loan.next_due + sim::days(7))),
+                         date_of(loan.next_due), step_up_note(loan, was_interest_only)),
              true);
     }
 
-    loan.next_due = loan.next_due + sim::days(7);
     schedule_due(world, scheduler, id);
 }
 
