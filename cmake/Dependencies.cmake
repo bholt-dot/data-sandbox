@@ -37,3 +37,17 @@ if(SIM_LINE_EDITING)
   target_include_directories(isocline SYSTEM PUBLIC "${isocline_SOURCE_DIR}/include")
   set_target_properties(isocline PROPERTIES C_STANDARD 99 C_EXTENSIONS OFF)
 endif()
+
+# Full-screen terminal UI for interactive apps only; core and expanse never link it.
+# FTXUI: MIT, no runtime dependencies (examples, docs and tests are off by default).
+option(SIM_TUI "Full-screen terminal UI via FTXUI" ON)
+if(SIM_TUI)
+  set(FTXUI_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+  set(FTXUI_QUIET ON CACHE BOOL "" FORCE)
+  FetchContent_Declare(ftxui
+    GIT_REPOSITORY https://github.com/ArthurSonzogni/FTXUI.git
+    GIT_TAG        v7.0.3
+    GIT_SHALLOW    TRUE
+    SYSTEM)
+  FetchContent_MakeAvailable(ftxui)
+endif()

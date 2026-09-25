@@ -5,6 +5,7 @@ add_library(simcore
   src/data_node.cpp
   src/defs.cpp
   src/command.cpp
+  src/doc.cpp
 )
 add_library(sim::core ALIAS simcore)
 target_include_directories(simcore PUBLIC include)
@@ -23,4 +24,5 @@ sim_add_test(simcore_tests
     tests/snapshot_tests.cpp
     tests/defs_tests.cpp
     tests/command_tests.cpp
+    tests/doc_tests.cpp
   LIBS sim::core)

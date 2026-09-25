@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <format>
 #include <limits>
 #include <sstream>
 #include <string>
@@ -42,8 +43,8 @@ struct World {
 
 void register_world(CommandBus<World>& bus, const World& world) {
     bus.add_query({.name = "status", .summary = "Show clock and cash"},
-                  [](const World& w, const Invocation&, std::ostream& out) {
-                      out << "t=" << w.now << " cash=" << w.cash << '\n';
+                  [](const World& w, const Invocation&, Doc& out) {
+                      out << std::format("t={} cash={}\n", w.now, w.cash);
                   });
     bus.add_action({.name = "advance",
                     .aliases = {"adv"},
@@ -51,7 +52,7 @@ void register_world(CommandBus<World>& bus, const World& world) {
                     .positionals = {{.name = "span",
                                      .type = ArgType::duration,
                                      .help = "how far to advance"}}},
-                   [](World& w, const Invocation& inv, std::ostream&) {
+                   [](World& w, const Invocation& inv, Doc&) {
                        w.now += inv.get<Duration>("span").seconds;
                    });
     bus.add_action(
@@ -65,10 +66,10 @@ void register_world(CommandBus<World>& bus, const World& world) {
                      {.name = "max-price", .type = ArgType::number, .help = "limit per unit"},
                      {.name = "burn", .type = ArgType::acceleration, .help = "transit burn"},
                      {.name = "dry-run", .type = ArgType::flag, .help = "only show the cost"}}},
-        [](World& w, const Invocation& inv, std::ostream& out) {
+        [](World& w, const Invocation& inv, Doc& out) {
             const std::int64_t cost = inv.get<std::int64_t>("qty") * 10;
             if (inv.flag("dry-run")) {
-                out << "would cost " << cost << '\n';
+                out << std::format("would cost {}\n", cost);
                 return;
             }
             if (cost > w.cash) {
@@ -324,10 +325,10 @@ TEST_CASE("help lists commands and describes one command") {
     World world;
     CommandBus<World> bus;
     register_world(bus, world);
-    std::ostringstream out;
+    Doc out;
 
     CHECK(bus.execute_line("help", world, out).status == LineResult::Status::ok);
-    const std::string overview = out.str();
+    const std::string overview = to_text(out);
     CHECK(overview.find("Commands:\n") == 0);
     CHECK(overview.find("  advance  Advance simulation time (alias: adv)\n") != std::string::npos);
     CHECK(overview.find("  quit     Leave the shell (alias: exit)\n") != std::string::npos);
@@ -335,9 +336,9 @@ TEST_CASE("help lists commands and describes one command") {
     // Sorted by name.
     CHECK(overview.find("advance") < overview.find("buy"));
 
-    out.str("");
+    out = Doc();
     CHECK(bus.execute_line("help adv", world, out).ok());
-    CHECK(out.str() ==
+    CHECK(to_text(out) ==
           "usage: advance <span>\n"
           "  Advance simulation time\n"
           "aliases: adv\n"
@@ -345,11 +346,11 @@ TEST_CASE("help lists commands and describes one command") {
           "arguments:\n"
           "  <span>  duration      how far to advance\n");
 
-    out.str("");
+    out = Doc();
     CHECK(bus.execute_line("help buy", world, out).ok());
-    CHECK(out.str().find("  <qty>        integer       units (default: 1)\n") != std::string::npos);
-    CHECK(out.str().find("  <item>       string        commodity [water|ice|fuel]\n") != std::string::npos);
-    CHECK(out.str().find("  --dry-run    flag          only show the cost\n") != std::string::npos);
+    CHECK(to_text(out).find("  <qty>        integer       units (default: 1)\n") != std::string::npos);
+    CHECK(to_text(out).find("  <item>       string        commodity [water|ice|fuel]\n") != std::string::npos);
+    CHECK(to_text(out).find("  --dry-run    flag          only show the cost\n") != std::string::npos);
 
     const LineResult bad = bus.execute_line("help advnce", world, out);
     CHECK(bad.status == LineResult::Status::error);
@@ -360,7 +361,7 @@ TEST_CASE("actions are queued and applied in order while queries run immediately
     World world;
     CommandBus<World> bus;
     register_world(bus, world);
-    std::ostringstream out;
+    Doc out;
 
     CHECK(bus.submit_line("advance 1d", world, out).ok());
     CHECK(bus.submit_line("buy water 2", world, out).ok());
@@ -368,7 +369,7 @@ TEST_CASE("actions are queued and applied in order while queries run immediately
     CHECK(world.now == 0); // nothing applied yet
 
     CHECK(bus.submit_line("status", world, out).ok());
-    CHECK(out.str() == "t=0 cash=100\n");
+    CHECK(to_text(out) == "t=0 cash=100\n");
 
     const auto applied = bus.apply_pending(world, out);
     CHECK(applied.applied == 2);
@@ -394,7 +395,7 @@ TEST_CASE("command log round-trips through a script") {
     World world;
     CommandBus<World> bus;
     register_world(bus, world);
-    std::ostringstream out;
+    Doc out;
     for (const char* line : {"advance 1.5d", "buy water", "buy ice 3 --at \"Ceres Station\" --burn 0.3g",
                              "status", "adv 90m  # comment", "buy fuel 99", "buy water 1 --max-price 0.1 --dry-run"}) {
         bus.execute_line(line, world, out);
@@ -436,7 +437,7 @@ TEST_CASE("command log entries serialize for snapshots") {
     World world;
     CommandBus<World> bus;
     register_world(bus, world);
-    std::ostringstream out;
+    Doc out;
     bus.execute_line("buy ice 2 --at Tycho --burn 1.5m/s2 --max-price 3.25", world, out);
     bus.execute_line("advance 6h", world, out);
 

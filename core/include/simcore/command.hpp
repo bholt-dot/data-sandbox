@@ -33,6 +33,7 @@
 #include <variant>
 #include <vector>
 
+#include "simcore/doc.hpp"
 #include "simcore/time.hpp"
 
 namespace sim {
@@ -219,8 +220,8 @@ public:
     std::vector<std::string> suggest(std::string_view word) const;
 
     std::string usage(const CommandSpec& spec) const;
-    void write_help(std::ostream& out) const;                          // command overview
-    void write_help(std::ostream& out, const CommandSpec& spec) const; // one command in detail
+    void write_help(Doc& out) const;                          // command overview
+    void write_help(Doc& out, const CommandSpec& spec) const; // one command in detail
 
     Completion complete(std::string_view line_before_cursor) const;
 

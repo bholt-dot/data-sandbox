@@ -11,6 +11,7 @@
 #include <string_view>
 
 #include "simcore/command_bus.hpp"
+#include "simcore/doc.hpp"
 
 namespace sim {
 
@@ -61,28 +62,31 @@ private:
 struct ReplOptions {
     std::string prompt = "> ";
     bool stop_on_error = false; // batch mode: the first error ends the run
+    Ansi ansi = Ansi::none;     // escape codes for the output stream (see doc.hpp)
 };
 
 // Runs until end of input, `quit`, or (with stop_on_error) the first error. Returns 0 on success,
-// 1 if stopped by an error. Errors are written to `out` as "error: ..." (prefixed by the reader's
-// location when it has one).
+// 1 if stopped by an error. Each line's output is rendered to `out` once the line has run; errors
+// are written as "error: ..." (prefixed by the reader's location when it has one).
 template <class Context>
 int run_repl(CommandBus<Context>& bus, Context& ctx, LineReader& in, std::ostream& out,
              const ReplOptions& options = {}) {
     while (auto line = in.read_line(options.prompt)) {
-        const LineResult r = bus.execute_line(*line, ctx, out);
+        Doc doc;
+        const LineResult r = bus.execute_line(*line, ctx, doc);
+        if (r.status == LineResult::Status::error) {
+            const std::string where = in.location();
+            doc << (where.empty() ? "" : where + ": ") << styled(Style::bad, "error:") << " " << r.error
+                << '\n';
+        }
+        render(doc, out, options.ansi);
+        out.flush();
         if (r.status == LineResult::Status::quit) {
             break;
         }
-        if (r.status == LineResult::Status::error) {
-            const std::string where = in.location();
-            out << (where.empty() ? "" : where + ": ") << "error: " << r.error << '\n';
-            if (options.stop_on_error) {
-                out.flush();
-                return 1;
-            }
+        if (r.status == LineResult::Status::error && options.stop_on_error) {
+            return 1;
         }
-        out.flush();
     }
     return 0;
 }
