@@ -1,6 +1,7 @@
 #include "expanse/scenario.hpp"
 
 #include "expanse/calendar.hpp"
+#include "expanse/finance.hpp"
 
 #include <stdexcept>
 #include <string>
@@ -46,16 +47,8 @@ World new_game(const Content& content, std::string_view scenario_key, std::uint6
     w.ships.insert(std::move(ship));
 
     if (sc.loan_principal > 0) {
-        Loan loan;
-        loan.borrower = w.player;
-        loan.lender = sc.start_station;
-        loan.balance = sc.loan_principal;
-        loan.weekly_payment = sc.loan_weekly_payment;
-        loan.missed_payment_limit = sc.loan_missed_payment_limit;
-        loan.next_due = start + sim::days(7);
-        const LoanId loan_id = w.loans.insert(loan);
-        w.scheduler.schedule_at(loan.next_due, LoanPaymentDue{loan_id},
-                                {priority_finance, player_event});
+        open_loan(w, w.player, sc.start_station, sc.loan_principal, sc.loan_weekly_payment,
+                  sc.loan_missed_payment_limit, start + sim::days(7));
     }
 
     // Recurring systems, on a grid anchored at midnight of the epoch.

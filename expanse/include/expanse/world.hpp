@@ -20,6 +20,7 @@
 
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <span>
 #include <string>
 #include <tuple>
@@ -42,12 +43,17 @@ using CommodityId = sim::DefId<CommodityDef>;
 
 // ---- Companies --------------------------------------------------------------------------------
 
+enum class CompanyStatus : std::uint8_t { active, repossessed };
+
 struct Company {
     std::string name;
-    Credits cash = 0;
+    Credits cash = 0; // change only through transact() (finance.hpp), which keeps the ledger
     bool is_player = false;
+    CompanyStatus status = CompanyStatus::active;
 
-    static constexpr auto fields(auto& self) { return std::tie(self.name, self.cash, self.is_player); }
+    static constexpr auto fields(auto& self) {
+        return std::tie(self.name, self.cash, self.is_player, self.status);
+    }
 };
 
 // ---- Ships ------------------------------------------------------------------------------------
@@ -130,11 +136,67 @@ struct Loan {
     std::uint8_t missed_payments = 0;
     std::uint8_t missed_payment_limit = 3;
     sim::Time next_due;
+    std::uint32_t weekly_interest_bp = 60; // basis points of balance per week (see finance.hpp)
+    Credits paid_since_due = 0;            // voluntary payments counted toward the next instalment
+    Credits interest_charged = 0;          // lifetime, for the books
+    sim::EventId due_event;                // pending LoanPaymentDue
 
     static constexpr auto fields(auto& self) {
         return std::tie(self.borrower, self.lender, self.balance, self.weekly_payment,
-                        self.missed_payments, self.missed_payment_limit, self.next_due);
+                        self.missed_payments, self.missed_payment_limit, self.next_due,
+                        self.weekly_interest_bp, self.paid_since_due, self.interest_charged,
+                        self.due_event);
     }
+};
+
+// Every change to a company's cash, in posting order (time is non-decreasing). Append-only:
+// corrections are new entries, never edits. Written only by transact() (finance.hpp).
+enum class LedgerCategory : std::uint8_t {
+    trade, fuel, docking, wages, loan, repairs, contract, supplies, other
+};
+
+constexpr auto enum_names(LedgerCategory) {
+    using L = LedgerCategory;
+    return std::array{std::pair{std::string_view{"trade"}, L::trade},
+                      std::pair{std::string_view{"fuel"}, L::fuel},
+                      std::pair{std::string_view{"docking"}, L::docking},
+                      std::pair{std::string_view{"wages"}, L::wages},
+                      std::pair{std::string_view{"loan"}, L::loan},
+                      std::pair{std::string_view{"repairs"}, L::repairs},
+                      std::pair{std::string_view{"contract"}, L::contract},
+                      std::pair{std::string_view{"supplies"}, L::supplies},
+                      std::pair{std::string_view{"other"}, L::other}};
+}
+
+struct LedgerEntry {
+    sim::Time time;
+    CompanyId company;
+    Credits amount = 0; // + income, - expense
+    LedgerCategory category = LedgerCategory::other;
+    Credits balance_after = 0;
+    std::string description;
+
+    static constexpr auto fields(auto& self) {
+        return std::tie(self.time, self.company, self.amount, self.category, self.balance_after,
+                        self.description);
+    }
+};
+
+// Docking fees a company could not pay at a station (see finance.hpp: dock tabs).
+struct DockTab {
+    CompanyId company;
+    StationId station;
+    Credits owed = 0;
+
+    static constexpr auto fields(auto& self) { return std::tie(self.company, self.station, self.owed); }
+};
+
+// Set when the player's company is lost; the shell stops offering play.
+struct GameOver {
+    sim::Time time;
+    std::string reason;
+
+    static constexpr auto fields(auto& self) { return std::tie(self.time, self.reason); }
 };
 
 // ---- Stations ---------------------------------------------------------------------------------
@@ -196,6 +258,9 @@ struct World {
     std::vector<StationState> stations; // by station index
     sim::StatPipeline stats;
     std::vector<Message> messages; // append-only journal; the shell shows what's new
+    std::vector<LedgerEntry> ledger; // append-only; see finance.hpp
+    std::vector<DockTab> dock_tabs;  // unpaid docking fees, by (company, station)
+    std::optional<GameOver> game_over;
 
     CompanyId player;
 
@@ -208,7 +273,8 @@ struct World {
     static constexpr auto fields(auto& self) {
         return std::tie(self.content_fingerprint, self.seed, self.scheduler, self.rngs,
                         self.companies, self.ships, self.crew, self.loans, self.stations,
-                        self.stats, self.messages, self.player);
+                        self.stats, self.messages, self.player, self.ledger, self.dock_tabs,
+                        self.game_over);
     }
 };
 
