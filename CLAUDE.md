@@ -35,6 +35,9 @@ not available on GCC 13 — use `<format>` + streams.
   - No global RNG; use per-system seeded streams.
   - Never let iteration order of an unordered container affect results.
   - No wall-clock time, no pointer-address ordering, no uninitialized reads.
+- Every persistent row/state type lists its fields once for save + load + hash:
+  `static auto fields(auto& self) { return std::tie(self.a, self.b); }` (see `simcore/serialize.hpp`).
+  Use `<cstdint>` fixed-width integers in state; no unordered containers or pointers in state.
 - Orbits are analytic (position is a pure function of time); transits are scheduled arrival events,
   not per-tick movement.
 - Doubles are fine (no multiplayer lockstep).

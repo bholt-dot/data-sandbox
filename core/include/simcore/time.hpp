@@ -3,6 +3,7 @@
 #include <compare>
 #include <cstdint>
 #include <string>
+#include <tuple>
 
 namespace sim {
 
@@ -17,6 +18,8 @@ struct Duration {
     constexpr Duration operator*(std::int64_t k) const { return {seconds * k}; }
     constexpr Duration& operator+=(Duration o) { seconds += o.seconds; return *this; }
     constexpr double to_seconds_f() const { return static_cast<double>(seconds); }
+
+    static constexpr auto fields(auto& self) { return std::tie(self.seconds); }
 };
 
 constexpr Duration seconds(std::int64_t s) { return {s}; }
@@ -34,6 +37,8 @@ struct Time {
     constexpr Duration operator-(Time o) const { return {seconds - o.seconds}; }
     constexpr Time& operator+=(Duration d) { seconds += d.seconds; return *this; }
     constexpr double to_seconds_f() const { return static_cast<double>(seconds); }
+
+    static constexpr auto fields(auto& self) { return std::tie(self.seconds); }
 };
 
 // Human-readable duration, e.g. "11d 4h 3m".

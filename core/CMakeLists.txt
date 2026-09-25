@@ -14,4 +14,6 @@ sim_add_test(simcore_tests
     tests/rng_tests.cpp
     tests/scheduler_tests.cpp
     tests/stats_tests.cpp
+    tests/serialize_tests.cpp
+    tests/snapshot_tests.cpp
   LIBS sim::core)

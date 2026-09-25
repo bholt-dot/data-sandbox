@@ -7,6 +7,7 @@
 #include <limits>
 #include <optional>
 #include <stdexcept>
+#include <string>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -41,6 +42,8 @@ struct EventId {
 
     constexpr bool valid() const { return seq != 0; }
     constexpr auto operator<=>(const EventId&) const = default;
+
+    static constexpr auto fields(auto& self) { return std::tie(self.slot, self.seq); }
 };
 
 struct PeriodicId {
@@ -49,6 +52,8 @@ struct PeriodicId {
 
     constexpr bool valid() const { return index != null_index; }
     constexpr auto operator<=>(const PeriodicId&) const = default;
+
+    static constexpr auto fields(auto& self) { return std::tie(self.index); }
 };
 
 struct EventOptions {
@@ -83,6 +88,10 @@ struct PendingEvent {
     std::int32_t priority = 0;
     EventFlags flags = 0;
     Payload payload;
+
+    static auto fields(auto& self) {
+        return std::tie(self.id, self.time, self.priority, self.flags, self.payload);
+    }
 };
 
 template <class Payload>
@@ -95,6 +104,43 @@ struct PeriodicInfo {
     EventFlags flags = 0;
     bool active = false;
     Payload payload;
+};
+
+// Complete scheduler state, as captured by Scheduler::snapshot() and consumed by restore().
+// Carries everything that influences future behaviour: the sequence counter (future EventIds and
+// tie-break ordinals), the event slot free list (future EventId slots) and each periodic's
+// ordinal, so a restored scheduler fires, and allocates ids, exactly like the original.
+template <class Payload>
+struct PeriodicState {
+    Duration period;
+    Time anchor;
+    Time next;
+    std::int32_t priority = 0;
+    EventFlags flags = 0;
+    std::uint64_t ordinal = 0;
+    bool active = false;
+    Payload payload;
+
+    static auto fields(auto& self) {
+        return std::tie(self.period, self.anchor, self.next, self.priority, self.flags,
+                        self.ordinal, self.active, self.payload);
+    }
+};
+
+template <class Payload>
+struct SchedulerState {
+    Time now;
+    std::uint64_t next_seq = 1;
+    std::uint64_t fires_at_instant = 0;
+    std::uint32_t slot_count = 0;
+    std::vector<std::uint32_t> free_slots;        // LIFO stack order, as used for reuse
+    std::vector<PendingEvent<Payload>> events;    // by slot index
+    std::vector<PeriodicState<Payload>> periodics; // index = PeriodicId::index
+
+    static auto fields(auto& self) {
+        return std::tie(self.now, self.next_seq, self.fires_at_instant, self.slot_count,
+                        self.free_slots, self.events, self.periodics);
+    }
 };
 
 template <class Payload>
@@ -257,6 +303,119 @@ public:
     template <class Handler>
     Result advance_until_next_event(Time limit, Handler&& handler) {
         return run(limit, handler, [](const OccurrenceT&) { return true; });
+    }
+
+    // --- snapshot ----------------------------------------------------------------------
+
+    SchedulerState<Payload> snapshot() const {
+        if (running_) {
+            throw std::logic_error("Scheduler::snapshot: called from a handler");
+        }
+        SchedulerState<Payload> st;
+        st.now = now_;
+        st.next_seq = next_seq_;
+        st.fires_at_instant = fires_at_instant_;
+        st.slot_count = static_cast<std::uint32_t>(slots_.size());
+        st.free_slots = free_slots_;
+        st.events.reserve(live_events_);
+        for (std::uint32_t i = 0; i < slots_.size(); ++i) {
+            const Slot& s = slots_[i];
+            if (s.seq != 0) {
+                st.events.push_back({EventId{i, s.seq}, s.time, s.priority, s.flags, *s.payload});
+            }
+        }
+        st.periodics.reserve(periodics_.size());
+        for (const Periodic& p : periodics_) {
+            st.periodics.push_back({p.period, p.anchor, p.next, p.priority, p.flags, p.ordinal,
+                                    p.active, p.payload});
+        }
+        return st;
+    }
+
+    // Replaces all state with `st`. Throws std::invalid_argument if `st` is inconsistent (the
+    // scheduler is then unchanged). The instant fire limit is configuration and is kept.
+    void restore(SchedulerState<Payload> st) {
+        if (running_) {
+            throw std::logic_error("Scheduler::restore: called from a handler");
+        }
+        auto invalid = [](const char* what) {
+            throw std::invalid_argument(std::string("Scheduler::restore: ") + what);
+        };
+        if (st.next_seq == 0) {
+            invalid("next_seq must be positive");
+        }
+        if (st.periodics.size() >= PeriodicId::null_index) {
+            invalid("too many periodic systems");
+        }
+        // Checked before allocating so a corrupt slot_count cannot trigger a huge allocation.
+        if (st.free_slots.size() + st.events.size() != st.slot_count) {
+            invalid("every slot must be either pending or free");
+        }
+        std::vector<std::uint64_t> ordinals;
+        ordinals.reserve(st.events.size() + st.periodics.size());
+
+        std::vector<Slot> slots(st.slot_count);
+        std::vector<Entry> heap;
+        for (PendingEvent<Payload>& e : st.events) {
+            if (e.id.slot >= slots.size() || slots[e.id.slot].seq != 0) {
+                invalid("event slot out of range or duplicated");
+            }
+            if (e.time < st.now) {
+                invalid("pending event is in the past");
+            }
+            ordinals.push_back(e.id.seq);
+            Slot& s = slots[e.id.slot];
+            s.seq = e.id.seq;
+            s.time = e.time;
+            s.priority = e.priority;
+            s.flags = e.flags;
+            s.payload.emplace(std::move(e.payload));
+            heap.push_back({e.time, e.priority, e.id.seq, e.id.slot, EntryKind::event});
+        }
+        std::vector<bool> is_free(slots.size(), false);
+        for (std::uint32_t i : st.free_slots) {
+            if (i >= slots.size() || slots[i].seq != 0 || is_free[i]) {
+                invalid("free slot out of range, occupied or duplicated");
+            }
+            is_free[i] = true;
+        }
+
+        std::vector<Periodic> periodics;
+        periodics.reserve(st.periodics.size());
+        for (PeriodicState<Payload>& p : st.periodics) {
+            if (p.period.seconds <= 0) {
+                invalid("periodic period must be positive");
+            }
+            if (p.active && p.next < st.now) {
+                invalid("active periodic is in the past");
+            }
+            ordinals.push_back(p.ordinal);
+            if (p.active) {
+                heap.push_back({p.next, p.priority, p.ordinal,
+                                static_cast<std::uint32_t>(periodics.size()), EntryKind::periodic});
+            }
+            periodics.push_back({p.period, p.anchor, p.next, p.priority, p.flags, p.ordinal,
+                                 p.active, std::move(p.payload)});
+        }
+
+        std::sort(ordinals.begin(), ordinals.end());
+        if (!ordinals.empty() && (ordinals.front() == 0 || ordinals.back() >= st.next_seq)) {
+            invalid("sequence number out of range");
+        }
+        if (std::adjacent_find(ordinals.begin(), ordinals.end()) != ordinals.end()) {
+            invalid("duplicate sequence number");
+        }
+        std::make_heap(heap.begin(), heap.end(), fires_later);
+
+        now_ = st.now;
+        next_seq_ = st.next_seq;
+        fires_at_instant_ = st.fires_at_instant;
+        live_events_ = st.events.size();
+        tombstones_ = 0;
+        heap_ = std::move(heap);
+        slots_ = std::move(slots);
+        free_slots_ = std::move(st.free_slots);
+        periodics_ = std::move(periodics);
     }
 
     // Progress guard: a handler chain that keeps scheduling at the current instant would
