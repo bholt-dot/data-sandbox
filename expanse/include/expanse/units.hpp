@@ -25,6 +25,8 @@ inline constexpr double mu_earth = 3.986004418e14;
 // Standard gravity (CGPM 1901): exact. Crews think in g, so drive accelerations are quoted in it.
 inline constexpr double g0 = 9.80665;
 inline constexpr double tonne_kg = 1000.0;
+// SI definition: exact.
+inline constexpr double speed_of_light = 299'792'458.0;
 
 constexpr double au(double v) { return v * au_m; }
 constexpr double gees(double v) { return v * g0; }
