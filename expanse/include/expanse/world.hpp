@@ -33,10 +33,12 @@ struct CompanyTag;
 struct ShipTag;
 struct CrewTag;
 struct LoanTag;
+struct ContractTag;
 using CompanyId = sim::Handle<CompanyTag>;
 using ShipId = sim::Handle<ShipTag>;
 using CrewId = sim::Handle<CrewTag>;
 using LoanId = sim::Handle<LoanTag>;
+using ContractId = sim::Handle<ContractTag>;
 
 using StationId = sim::DefId<StationDef>;
 using CommodityId = sim::DefId<CommodityDef>;
@@ -92,6 +94,16 @@ struct Underway {
 
 using ShipLocation = std::variant<Docked, Underway>;
 
+// Someone else's cargo aboard under a contract (contracts.hpp). It has mass and takes hold space,
+// but it is not the ship's to sell or eat, so it is kept apart from Ship::cargo.
+struct Consignment {
+    ContractId contract;
+    CommodityId commodity;
+    double tonnes = 0.0;
+
+    static constexpr auto fields(auto& self) { return std::tie(self.contract, self.commodity, self.tonnes); }
+};
+
 struct Ship {
     std::string name;
     sim::DefId<ShipClassDef> ship_class;
@@ -100,10 +112,11 @@ struct Ship {
     double reaction_mass_t = 0.0;
     std::vector<CargoLot> cargo;
     double hull_condition = 1.0; // 0..1
+    std::vector<Consignment> consignments; // contract cargo; counts toward cargo_mass_t
 
     static constexpr auto fields(auto& self) {
         return std::tie(self.name, self.ship_class, self.owner, self.location, self.reaction_mass_t,
-                        self.cargo, self.hull_condition);
+                        self.cargo, self.hull_condition, self.consignments);
     }
 };
 
@@ -207,6 +220,54 @@ struct GameOver {
     static constexpr auto fields(auto& self) { return std::tie(self.time, self.reason); }
 };
 
+// ---- Contracts (contracts.hpp) --------------------------------------------------------------------
+
+enum class ContractKind : std::uint8_t { cargo, passengers };
+enum class ContractStatus : std::uint8_t { offered, accepted, delivered, failed, expired };
+
+// A job on a station's board. Offers are posted at `origin` and taken there; the deadline is
+// set on acceptance (accepted_at + time_allowed), so an offer's terms don't rot on the board.
+struct Contract {
+    ContractKind kind = ContractKind::cargo;
+    StationId origin;
+    StationId destination;
+    CommodityId commodity;           // cargo only
+    double tonnes = 0.0;             // cargo only; provided by the client
+    std::uint8_t passengers = 0;     // passengers only
+    Credits reward = 0;              // paid on delivery (less any late cut)
+    Credits deposit = 0;             // cargo: held while carrying, refunded on delivery
+    std::int8_t min_standing = 0;    // with the origin's faction, to accept
+    sim::Duration time_allowed{};    // from acceptance
+    sim::Time deadline{};            // set on acceptance
+    sim::Time posted_at{};
+    sim::Time expires_at{};          // an untaken offer is withdrawn then
+    ContractStatus status = ContractStatus::offered;
+    CompanyId holder;
+    ShipId ship;                     // carrying it
+    sim::Time accepted_at{};
+    sim::Time closed_at{};           // delivered / failed / expired
+    Credits paid = 0;                // reward actually paid
+    bool aboard = false;             // cargo or passengers still on the ship
+    std::uint8_t warned = 0;         // deadline warnings already posted (bit flags)
+
+    static constexpr auto fields(auto& self) {
+        return std::tie(self.kind, self.origin, self.destination, self.commodity, self.tonnes,
+                        self.passengers, self.reward, self.deposit, self.min_standing,
+                        self.time_allowed, self.deadline, self.posted_at, self.expires_at,
+                        self.status, self.holder, self.ship, self.accepted_at, self.closed_at,
+                        self.paid, self.aboard, self.warned);
+    }
+};
+
+// A company's standing with a faction; missing = 0. Earned and lost through contracts.
+struct Standing {
+    CompanyId company;
+    Faction faction = Faction::independent;
+    std::int32_t value = 0;
+
+    static constexpr auto fields(auto& self) { return std::tie(self.company, self.faction, self.value); }
+};
+
 // ---- Stations ---------------------------------------------------------------------------------
 
 // Market state; see economy.hpp. Prices are a pure function of stock, so they are not stored.
@@ -274,6 +335,8 @@ struct World {
     std::vector<LedgerEntry> ledger; // append-only; see finance.hpp
     std::vector<DockTab> dock_tabs;  // unpaid docking fees, by (company, station)
     std::optional<GameOver> game_over;
+    sim::Table<ContractTag, Contract> contracts;
+    std::vector<Standing> standings;
 
     CompanyId player;
 
@@ -287,7 +350,7 @@ struct World {
         return std::tie(self.content_fingerprint, self.seed, self.scheduler, self.rngs,
                         self.companies, self.ships, self.crew, self.loans, self.stations,
                         self.stats, self.messages, self.player, self.ledger, self.dock_tabs,
-                        self.game_over);
+                        self.game_over, self.contracts, self.standings);
     }
 };
 
@@ -297,7 +360,7 @@ struct World {
 Vec3 ship_position(const Content& content, const World& world, const Ship& ship);
 Vec3 ship_position(const Content& content, const Ship& ship, sim::Time t);
 
-// Total cargo mass aboard [t].
+// Total cargo mass aboard [t], contract consignments included.
 double cargo_mass_t(const Ship& ship);
 
 // ---- Save / load / hash -----------------------------------------------------------------------
@@ -307,6 +370,7 @@ std::vector<std::uint8_t> save_world(const World& world);
 World load_world(std::span<const std::uint8_t> bytes, const Content& content);
 std::uint64_t world_hash(const World& world);
 
-inline constexpr std::uint32_t world_schema_version = 2; // 2: Loan::interest_only_until
+// 2: Loan::interest_only_until; 3: contracts, standings, Ship::consignments
+inline constexpr std::uint32_t world_schema_version = 3;
 
 } // namespace expanse

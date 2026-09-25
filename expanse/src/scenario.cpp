@@ -1,6 +1,7 @@
 #include "expanse/scenario.hpp"
 
 #include "expanse/calendar.hpp"
+#include "expanse/contracts.hpp"
 #include "expanse/crew.hpp"
 #include "expanse/finance.hpp"
 
@@ -57,6 +58,8 @@ World new_game(const Content& content, std::string_view scenario_key, std::uint6
 
     // The captain, provisions aboard, and job-seekers on every dock.
     crew::start_new_game(content, w, sc, ship_id);
+    // Work on every board from day one.
+    contracts::start_new_game(content, w);
 
     // Recurring systems, on a grid anchored at midnight of the epoch.
     w.scheduler.add_periodic(sim::days(1), DailyTick{}, {sim::Time{}, priority_daily, 0});

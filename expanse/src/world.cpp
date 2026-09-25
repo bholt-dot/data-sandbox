@@ -38,6 +38,9 @@ double cargo_mass_t(const Ship& ship) {
     for (const CargoLot& lot : ship.cargo) {
         total += lot.tonnes;
     }
+    for (const Consignment& c : ship.consignments) {
+        total += c.tonnes;
+    }
     return total;
 }
 

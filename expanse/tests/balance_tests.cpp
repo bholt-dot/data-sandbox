@@ -16,6 +16,7 @@
 
 #include <doctest/doctest.h>
 
+#include "expanse/contracts.hpp"
 #include "expanse/crew.hpp"
 #include "expanse/economy.hpp"
 #include "expanse/finance.hpp"
@@ -176,6 +177,9 @@ struct BotRun {
     int missed_payments = 0; // lifetime
     std::vector<std::string> log;
     sim::Time start{};
+    int contracts_delivered = 0;
+    int contracts_failed = 0;
+    Credits contract_income = 0; // rewards paid (deposits refunded not counted)
 };
 
 WeekRow snapshot(const Content& c, const World& w, int week) {
@@ -233,13 +237,14 @@ private:
     sim::Time start_;
 };
 
-void keep_provisions(const Content& c, World& w, ShipId ship) {
+// `people` scales the captain's stores for passengers aboard.
+void keep_provisions(const Content& c, World& w, ShipId ship, double people = 1.0) {
     for (const char* key : provision_keys) {
         const CommodityId id = c.find<CommodityDef>(key);
         const double have = aboard(w.ships.at(ship), id);
         const StationId here = std::get<Docked>(w.ships.at(ship).location).station;
-        if (have < provision_floor(c, id, 14.0) && eco::market_entry(c, here, id)) {
-            (void)eco::buy(c, w, ship, id, provision_floor(c, id, 35.0) - have);
+        if (have < people * provision_floor(c, id, 14.0) && eco::market_entry(c, here, id)) {
+            (void)eco::buy(c, w, ship, id, people * provision_floor(c, id, 35.0) - have);
         }
     }
 }
@@ -322,7 +327,8 @@ double water_ask(const Content& c, const World& w, StationId st) {
 sim::Duration days_f(double days) { return sim::seconds(static_cast<std::int64_t>(days * 86400.0)); }
 
 BotRun run_careful(const Content& c, std::uint64_t seed, int weeks, const CarefulParams& prm = {}) {
-    BotRun run{"careful", {}, {}, 0, 0, {}, {}};
+    BotRun run;
+    run.name = "careful";
     World w = start_game(c, seed);
     const ShipId ship = player_ship(w);
     const StationId nail = c.find<StationDef>("hollow_nail");
@@ -460,12 +466,205 @@ BotRun run_careful(const Content& c, std::uint64_t seed, int weeks, const Carefu
     return run;
 }
 
+// ---- The careful contractor --------------------------------------------------------------------
+// The careful trader's habits (coasting courses, fuel bought before cargo, early instalments),
+// but free to roam the Ceres cluster and to take jobs from the boards. At each port it weighs
+// every other cluster station: the contracts bound there it can take (best-paying first, as long
+// as hold, berths and the deposit fit), plus the best own-account trade in the space left, less
+// reaction mass and the destination's docking fee, per day of the leg. The leg must make the
+// earliest deadline among the jobs taken (with a margin); it never takes a job it can't make.
+
+BotRun run_contractor(const Content& c, std::uint64_t seed, int weeks, const CarefulParams& prm = {}) {
+    BotRun run;
+    run.name = "contractor";
+    World w = start_game(c, seed);
+    const ShipId ship = player_ship(w);
+    const ShipClassDef& cls = c.table<ShipClassDef>()[w.ships.at(ship).ship_class];
+    const std::vector<StationId> ports = cluster(c);
+    Recorder rec(c, w, run);
+    const sim::Time end = rec.start() + sim::days(7 * weeks) + sim::hours(2);
+    std::optional<StationId> sell_at;
+    const sim::Duration margin = sim::hours(6);
+
+    while (w.now() < end && !w.game_over) {
+        const StationId here = std::get<Docked>(w.ships.at(ship).location).station;
+        if (sell_at == here) {
+            for (auto [cid, def] : c.table<CommodityDef>()) {
+                (void)def;
+                const double spare = aboard(w.ships.at(ship), cid) - 4.0 * provision_floor(c, cid, 35.0);
+                if (spare > 0.01 && eco::market_entry(c, here, cid)) {
+                    (void)eco::sell(c, w, ship, cid, spare);
+                }
+            }
+            sell_at.reset();
+        }
+        keep_provisions(c, w, ship, 4.0); // room for a full passenger list
+
+        const double price = water_ask(c, w, here);
+        struct Plan {
+            StationId dest;
+            std::vector<ContractId> jobs;
+            double days = 0.0;
+            TradeIdea trade;
+            Credits instalment = 0;
+            double rate = -std::numeric_limits<double>::infinity();
+        } plan;
+        const auto board = contracts::board_at(w, here);
+        for (const StationId dest : ports) {
+            if (dest == here) {
+                continue;
+            }
+            // Jobs to `dest`, best reward first, while they fit.
+            std::vector<ContractId> offers;
+            for (const ContractId id : board) {
+                if (w.contracts.at(id).destination == dest && contracts::can_accept(c, w, ship, id).ok) {
+                    offers.push_back(id);
+                }
+            }
+            std::sort(offers.begin(), offers.end(), [&](ContractId a, ContractId b) {
+                return std::tie(w.contracts.at(b).reward, b.index) < std::tie(w.contracts.at(a).reward, a.index);
+            });
+            const Ship& s = w.ships.at(ship);
+            double space = cls.cargo_capacity_t - cargo_mass_t(s);
+            auto berths = static_cast<int>(cls.crew_berths) - static_cast<int>(crew::aboard(w, ship).size()) -
+                          static_cast<int>(contracts::passengers_aboard(w, ship));
+            Credits deposits = 0;
+            Credits rewards = 0;
+            double job_t = 0.0;
+            sim::Time due = sim::Time{std::numeric_limits<std::int64_t>::max()};
+            std::vector<ContractId> jobs;
+            for (const ContractId id : offers) {
+                const Contract& k = w.contracts.at(id);
+                const auto terms = contracts::terms_for(c, w, k, w.player);
+                const bool fits = k.kind == ContractKind::cargo ? k.tonnes <= space : k.passengers <= berths;
+                // Keep enough cash for the leg's reaction mass after deposits.
+                if (!fits || cash(w) - deposits - terms.deposit < 600) {
+                    continue;
+                }
+                jobs.push_back(id);
+                deposits += terms.deposit;
+                rewards += terms.reward;
+                space -= k.kind == ContractKind::cargo ? k.tonnes : 0.0;
+                job_t += k.kind == ContractKind::cargo ? k.tonnes : 0.0;
+                berths -= k.kind == ContractKind::passengers ? k.passengers : 0;
+                due = std::min(due, w.now() + k.time_allowed);
+            }
+            const double m0 = cls.dry_mass_t + s.reaction_mass_t + cargo_mass_t(s) + job_t;
+            for (const double days : prm.leg_days) {
+                if (!jobs.empty() && w.now() + days_f(days) + margin > due) {
+                    continue;
+                }
+                const CoursePreview p = plot_cheapest_within(c, w, ship, dest, prm.accel_g, days_f(days));
+                if (p.status != CourseStatus::ok && p.status != CourseStatus::insufficient_reaction_mass) {
+                    continue;
+                }
+                Credits instalment = 0;
+                if (const Loan* loan = player_loan(w); loan != nullptr && loan->next_due < p.arrival) {
+                    instalment = instalment_outstanding(*loan);
+                    if (cash(w) - deposits - instalment < prm.min_trade_cash) {
+                        instalment = 0;
+                    }
+                }
+                const double leg_t = p.reaction_mass_needed_t * (m0 / std::max(1.0, p.wet_mass_t));
+                const double per_t = leg_t / m0;
+                const double fuel_short = std::max(0.0, 2.0 * leg_t + prm.fuel_margin_t - s.reaction_mass_t);
+                const double free = static_cast<double>(cash(w) - deposits - instalment - 100) - fuel_short * price;
+                const TradeIdea t = best_trade(c, w, here, dest, free, space, per_t * price);
+                const double cost = leg_t * price + static_cast<double>(c.table<StationDef>()[dest].docking_fee);
+                const double rate = (static_cast<double>(rewards) + t.profit - cost) / (days + 0.5);
+                if (rate > plan.rate) {
+                    plan = {dest, jobs, days, t, instalment, rate};
+                }
+            }
+        }
+        if (plan.days <= 0.0) {
+            rec.advance(w.now() + sim::days(1));
+            continue;
+        }
+
+        if (plan.instalment > 0) {
+            (void)pay_loan(c, w, player_loan_id(w), plan.instalment);
+        }
+        for (const ContractId id : plan.jobs) {
+            (void)contracts::accept(c, w, ship, id);
+        }
+        // Reaction mass for this leg (with the jobs aboard and the trade to come) and the next.
+        {
+            const CoursePreview p = plot_cheapest_within(c, w, ship, plan.dest, prm.accel_g, days_f(plan.days));
+            const double m_now = p.wet_mass_t;
+            const double need = p.reaction_mass_needed_t * (m_now + plan.trade.tonnes) / std::max(1.0, m_now);
+            const double want = 2.0 * need + prm.fuel_margin_t - w.ships.at(ship).reaction_mass_t;
+            const double tank_space = cls.reaction_mass_capacity_t - w.ships.at(ship).reaction_mass_t;
+            const double affordable = static_cast<double>(cash(w) - 50) / std::max(price, 1.0);
+            const double fuel = std::floor(std::min({want + 1.0, tank_space, affordable}));
+            if (want > 0.0 && fuel >= 1.0) {
+                (void)eco::refuel(c, w, ship, fuel);
+            }
+        }
+        if (plan.trade.tonnes >= 1.0) {
+            const double t = std::min({plan.trade.tonnes,
+                                       cls.cargo_capacity_t - cargo_mass_t(w.ships.at(ship)),
+                                       std::floor(static_cast<double>(cash(w) - 50) /
+                                                  eco::quote(c, w, here, plan.trade.commodity)->ask)});
+            if (t >= 1.0 && eco::buy(c, w, ship, plan.trade.commodity, t).ok()) {
+                sell_at = plan.dest;
+            }
+        }
+        const CoursePreview p = plot_cheapest_within(c, w, ship, plan.dest, prm.accel_g, days_f(plan.days));
+        DepartResult d = depart(c, w, ship, plan.dest, {prm.accel_g, p.delta_v_km_s * (1.0 + 1e-9) + 1e-6});
+        if (!d.ok()) {
+            d = depart(c, w, ship, plan.dest, {0.05});
+        }
+        if (!d.ok()) {
+            run.log.push_back(std::format("stuck at {}: {}", c.table<StationDef>()[here].name, d.reason));
+            rec.advance(w.now() + sim::days(1));
+            continue;
+        }
+        ++run.legs;
+        if (tracing()) {
+            Credits rewards = 0;
+            for (const ContractId id : plan.jobs) {
+                rewards += w.contracts.at(id).reward;
+            }
+            run.log.push_back(std::format(
+                "day {:5.1f} {} -> {}: {} jobs ({} cr), trade {:.0f} t {} ({:.0f} cr), {:.1f} d, fuel {:.1f} t, "
+                "cash {} tank {:.0f}",
+                (w.now() - rec.start()).to_seconds_f() / 86400.0, c.table<StationDef>()[here].name,
+                c.table<StationDef>()[plan.dest].name, plan.jobs.size(), rewards, plan.trade.tonnes,
+                plan.trade.tonnes >= 1.0 ? c.table<CommodityDef>().key(plan.trade.commodity) : "-",
+                plan.trade.profit, d.preview.duration.to_seconds_f() / 86400.0,
+                d.preview.reaction_mass_needed_t, cash(w), w.ships.at(ship).reaction_mass_t));
+        }
+        rec.advance(d.preview.arrival + sim::minutes(1));
+    }
+    rec.advance(end);
+    for (const Message& m : w.messages) {
+        run.missed_payments += m.text.find("MISSED LOAN PAYMENT") != std::string::npos ? 1 : 0;
+        if (tracing() && (m.kind == MessageKind::warning)) {
+            run.log.push_back(std::format("  [{:.1f}] {}", (m.time - rec.start()).to_seconds_f() / 86400.0, m.text));
+        }
+    }
+    // Closed contracts are forgotten after a month, so count from the books and the journal.
+    for (const LedgerEntry& e : w.ledger) {
+        if (e.company == w.player && e.category == LedgerCategory::contract && e.amount > 0 &&
+            e.description.starts_with("contract #")) {
+            run.contract_income += e.amount;
+            ++run.contracts_delivered;
+        }
+    }
+    for (const Message& m : w.messages) {
+        run.contracts_failed += m.text.starts_with("Contract #") && m.text.find(" failed (") != std::string::npos;
+    }
+    return run;
+}
+
 // ---- The greedy-but-careless trader -------------------------------------------------------------
 // Same ore route, but flies flip-and-burn (fastest course) at `accel_g`, spends every credit on
 // cargo, refuels only when the drive refuses, and pays the loan only when the lender takes it.
 
 BotRun run_careless(const Content& c, std::uint64_t seed, int weeks, double accel_g) {
-    BotRun run{std::format("careless ({} g flip-and-burn)", accel_g), {}, {}, 0, 0, {}, {}};
+    BotRun run;
+    run.name = std::format("careless ({} g flip-and-burn)", accel_g);
     World w = start_game(c, seed);
     const ShipId ship = player_ship(w);
     const StationId nail = c.find<StationDef>("hollow_nail");
@@ -509,7 +708,8 @@ BotRun run_careless(const Content& c, std::uint64_t seed, int weeks, double acce
 }
 
 BotRun run_idle(const Content& c, std::uint64_t seed, int weeks) {
-    BotRun run{"idle", {}, {}, 0, 0, {}, {}};
+    BotRun run;
+    run.name = "idle";
     World w = start_game(c, seed);
     Recorder rec(c, w, run);
     rec.advance(rec.start() + sim::days(7 * weeks) + sim::hours(2));
@@ -526,8 +726,10 @@ void trace(const BotRun& run) {
     if (!tracing()) {
         return;
     }
-    std::cout << std::format("--- {} bot: {} legs, {} missed payments{}\n", run.name, run.legs,
-                             run.missed_payments, run.repossessed ? ", REPOSSESSED" : "");
+    std::cout << std::format("--- {} bot: {} legs, {} missed payments{}, contracts {} delivered / {} "
+                             "failed, {} cr contract pay\n",
+                             run.name, run.legs, run.missed_payments, run.repossessed ? ", REPOSSESSED" : "",
+                             run.contracts_delivered, run.contracts_failed, run.contract_income);
     for (const std::string& line : run.log) {
         std::cout << line << '\n';
     }
@@ -642,6 +844,60 @@ TEST_CASE("balance: a greedy careless trader does clearly worse than a careful o
         CHECK(reckless.repossessed);
         CHECK((hasty.repossessed || hasty.weeks.back().net_worth + 10000 < careful.net_worth));
     }
+}
+
+TEST_CASE("balance: contracts make a careful captain noticeably better off") {
+    // Contracts are the broke captain's way in: paid work without capital. Over the first half
+    // year the contractor should clearly beat the pure ore trader, yet the start stays tight.
+    const Content& c = game_content();
+    std::uint64_t seeds = 8;
+    if (const char* n = std::getenv("BELTER_BALANCE_SEEDS"); n != nullptr && *n != '\0') {
+        seeds = static_cast<std::uint64_t>(std::atoll(n));
+    }
+    const Credits instalment = regular_instalment(c);
+    if (tracing()) {
+        std::cout << "seed  trader@w26  contractor@w4 @w8 @w26  jobs done/failed  contract pay  missed\n";
+    }
+    std::vector<Credits> trader_gain;
+    std::vector<Credits> contractor_gain;
+    std::vector<Credits> liquid4;
+    for (std::uint64_t seed = 1; seed <= seeds; ++seed) {
+        CAPTURE(seed);
+        const BotRun trader = run_careful(c, seed, 26);
+        const BotRun contractor = run_contractor(c, seed, 26);
+        if (seed == traced_seed()) {
+            trace(contractor);
+        }
+        REQUIRE(contractor.weeks.size() >= 27);
+        CHECK_FALSE(contractor.repossessed);
+        CHECK(contractor.missed_payments <= 1);
+        CHECK(contractor.contracts_delivered > 10);
+        CHECK(contractor.contracts_failed <= 1);
+        trader_gain.push_back(week(trader, 26).net_worth - week(trader, 0).net_worth);
+        contractor_gain.push_back(week(contractor, 26).net_worth - week(contractor, 0).net_worth);
+        liquid4.push_back(liquid(week(contractor, 4)));
+        if (tracing()) {
+            std::cout << std::format("{:>4} {:>11} {:>14} {:>6} {:>6} {:>10}/{:<6} {:>12} {:>7}\n", seed,
+                                     trader_gain.back(), liquid(week(contractor, 4)),
+                                     liquid(week(contractor, 8)), contractor_gain.back(),
+                                     contractor.contracts_delivered, contractor.contracts_failed,
+                                     contractor.contract_income, contractor.missed_payments);
+        }
+    }
+    std::sort(trader_gain.begin(), trader_gain.end());
+    std::sort(contractor_gain.begin(), contractor_gain.end());
+    std::sort(liquid4.begin(), liquid4.end());
+    const Credits trader_median = trader_gain[trader_gain.size() / 2];
+    const Credits contractor_median = contractor_gain[contractor_gain.size() / 2];
+    if (tracing()) {
+        std::cout << std::format("SUMMARY gain@w26 median: trader {} contractor {}; contractor liquid@w4 median {}\n",
+                                 trader_median, contractor_median, liquid4[liquid4.size() / 2]);
+    }
+    // Noticeably better: at least half as much again as the trader's gain...
+    CHECK(contractor_median > trader_median + trader_median / 2);
+    // ...but not a money printer, and the first month is still lean.
+    CHECK(contractor_median < 5 * trader_median);
+    CHECK(liquid4[liquid4.size() / 2] < 8 * instalment);
 }
 
 TEST_CASE("balance: bots are deterministic") {

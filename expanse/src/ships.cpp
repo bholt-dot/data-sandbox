@@ -1,6 +1,7 @@
 #include "expanse/ships.hpp"
 
 #include "expanse/calendar.hpp"
+#include "expanse/contracts.hpp"
 #include "expanse/finance.hpp"
 #include "expanse/scenario.hpp"
 #include "expanse/simulation.hpp"
@@ -433,12 +434,17 @@ void ship_arrives(const Content& content, World& world, sim::Scheduler<Event>& s
     const double before = ship->hull_condition;
     ship->hull_condition = std::max(0.0, ship->hull_condition - wear);
 
-    if (ship->owner != world.player) {
+    const bool players = ship->owner == world.player;
+    if (players) {
+        post(world, MessageKind::ship,
+             std::format("{} docked at {} after {}.", ship->name, station_name(content, destination),
+                         format_trip(trip)));
+    }
+    contracts::on_docked(content, world, ship_id); // automatic delivery; may post
+    ship = world.ships.get(ship_id);
+    if (!players) {
         return; // NPC traffic is not journaled
     }
-    post(world, MessageKind::ship,
-         std::format("{} docked at {} after {}.", ship->name, station_name(content, destination),
-                     format_trip(trip)));
     if (ship->hull_condition < hull_warning_level && before >= hull_warning_level) {
         post(world, MessageKind::warning,
              std::format("{}'s hull is down to {:.0f}%. Get it looked at before it gives out.",

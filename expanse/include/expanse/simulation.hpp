@@ -42,7 +42,9 @@ void weekly_crew(const Content& content, World& world);
 void daily_crew(const Content& content, World& world);
 // finance.cpp: a scheduled loan instalment.
 void loan_payment_due(const Content& content, World& world, sim::Scheduler<Event>& scheduler, LoanId loan);
-// ships.cpp: a transit completes.
+// contracts.cpp: withdraw stale offers, fail overdue jobs, deadline warnings, post new offers.
+void daily_contracts(const Content& content, World& world);
+// ships.cpp: a transit completes (and contracts bound for the port are delivered).
 void ship_arrives(const Content& content, World& world, sim::Scheduler<Event>& scheduler, ShipId ship);
 
 } // namespace systems
