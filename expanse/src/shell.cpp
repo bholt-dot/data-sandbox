@@ -1,7 +1,9 @@
 #include "expanse/shell.hpp"
 
 #include "expanse/calendar.hpp"
+#include "expanse/finance.hpp"
 #include "expanse/scenario.hpp"
+#include "expanse/ships.hpp"
 #include "expanse/simulation.hpp"
 #include "expanse/units.hpp"
 
@@ -88,7 +90,78 @@ void advance_and_report(Session& s, sim::Time until, bool stop_on_urgent, std::o
     flush_messages(s, out);
     out << std::format("{} — {}\n", calendar::format_datetime(w.now()),
                        r.stopped_early ? "stopped: something needs your attention" : "done");
+    if (w.game_over) {
+        out << std::format("\n*** GAME OVER: {} ***\n", w.game_over->reason);
+    }
 }
+
+// The world, for commands that only make sense while the company is still in business.
+World& require_playing(Session& s) {
+    World& w = require_world(s);
+    if (w.game_over) {
+        throw CommandError(std::format("game over: {} ('new' starts again)", w.game_over->reason));
+    }
+    return w;
+}
+
+ShipId player_ship(const World& w) {
+    for (auto [id, ship] : w.ships) {
+        if (ship.owner == w.player) {
+            return id;
+        }
+    }
+    throw CommandError("you have no ship");
+}
+
+StationId station_arg(const Session& s, const Invocation& inv, std::string_view name = "station") {
+    const auto& key = inv.get<std::string>(name);
+    const StationId id = s.content->find<StationDef>(key);
+    if (!id) {
+        throw CommandError(std::format("no station '{}' (see 'stations')", key));
+    }
+    return id;
+}
+
+// Shared by plot and go: --accel, --maxdv and --within select the course.
+CoursePreview course_for(const Session& s, const Invocation& inv) {
+    const World& w = require_world(s);
+    const ShipId ship = player_ship(w);
+    const StationId dest = station_arg(s, inv);
+    const double accel = inv.get<sim::Acceleration>("accel").gees();
+    if (inv.has("within")) {
+        return plot_cheapest_within(*s.content, w, ship, dest, accel, inv.get<sim::Duration>("within"));
+    }
+    CourseOptions opts{accel, std::numeric_limits<double>::infinity()};
+    if (inv.has("maxdv")) {
+        opts.max_delta_v_km_s = inv.get<double>("maxdv");
+    }
+    return plot_course(*s.content, w, ship, dest, opts);
+}
+
+void print_preview(const Content& c, const CoursePreview& p, std::ostream& out) {
+    const auto& stations = c.table<StationDef>();
+    out << std::format("Course {} -> {}\n", stations[p.origin].name, stations[p.destination].name);
+    out << std::format("  depart {}  arrive {}  ({})\n", calendar::format_datetime(p.departure),
+                       calendar::format_datetime(p.arrival), sim::format_duration(p.duration));
+    out << std::format("  {:.2f} AU at {:.2f} g{}, flip at {}, peak {:.0f} km/s\n", p.distance_au, p.accel_g,
+                       p.accel_limited ? " (drive-limited)" : "", calendar::format_datetime(p.flip),
+                       p.peak_speed_km_s);
+    out << std::format("  dv {:.0f} km/s (incl. {:.0f} velocity match)\n", p.delta_v_km_s, p.match_delta_v_km_s);
+    out << std::format("  reaction mass {:.1f} t of {:.1f} t aboard -> {:.1f} t left ({:.0f}% of tank)\n",
+                       p.reaction_mass_needed_t, p.reaction_mass_aboard_t, p.reaction_mass_after_t,
+                       p.tank_after_pct);
+    out << std::format("  hull wear ~{:.1f}%, light-lag {}\n", p.hull_wear_pct,
+                       sim::format_duration(p.light_lag));
+    out << (p.feasible() ? "  GO\n" : std::format("  NO GO: {}\n", p.reason));
+}
+
+const std::vector<sim::ArgSpec> course_options = {
+    {.name = "accel", .type = sim::ArgType::acceleration, .help = "burn acceleration",
+     .default_value = "0.3g"},
+    {.name = "maxdv", .type = sim::ArgType::number, .help = "dv budget in km/s (coast to save mass)"},
+    {.name = "within", .type = sim::ArgType::duration,
+     .help = "cheapest course arriving within this time"},
+};
 
 } // namespace
 
@@ -304,6 +377,135 @@ void register_game_commands(ShellBus& bus, std::shared_ptr<const Content> conten
                                    state.stock[index_of(m.commodity)], m.production, m.consumption);
             }
         });
+    // --- flying ---
+
+    bus.add_query({.name = "plot",
+                   .summary = "Preview a course to a station",
+                   .details = "Defaults to the fastest flip-and-burn at 0.3 g. --maxdv caps the dv "
+                              "(the ship coasts mid-course); --within finds the cheapest course "
+                              "arriving in time.",
+                   .positionals = {{.name = "station", .help = "destination key",
+                                    .completer = keys_of<StationDef>(content)}},
+                   .options = course_options},
+                  [](const Session& s, const Invocation& inv, std::ostream& out) {
+                      print_preview(*s.content, course_for(s, inv), out);
+                  });
+
+    bus.add_query({.name = "routes",
+                   .summary = "Fastest course to every station at an acceleration",
+                   .options = {course_options[0]}},
+                  [](const Session& s, const Invocation& inv, std::ostream& out) {
+                      const World& w = require_world(s);
+                      const auto all = plot_all_destinations(
+                          *s.content, w, player_ship(w), {inv.get<sim::Acceleration>("accel").gees()});
+                      out << std::format("  {:<22} {:>7} {:>11} {:>9} {:>9}  {}\n", "destination", "AU",
+                                         "time", "rmass t", "tank left", "");
+                      for (const CoursePreview& p : all) {
+                          out << std::format("  {:<22} {:>7.2f} {:>11} {:>9.1f} {:>8.0f}%  {}\n",
+                                             s.content->table<StationDef>()[p.destination].name,
+                                             p.distance_au, sim::format_duration(p.duration),
+                                             p.reaction_mass_needed_t, p.tank_after_pct,
+                                             p.feasible() ? "" : p.reason);
+                      }
+                  });
+
+    bus.add_action({.name = "go",
+                    .summary = "Undock and fly to a station (same options as plot)",
+                    .positionals = {{.name = "station", .help = "destination key",
+                                     .completer = keys_of<StationDef>(content)}},
+                    .options = course_options},
+                   [](Session& s, const Invocation& inv, std::ostream& out) {
+                       World& w = require_playing(s);
+                       const CoursePreview p = course_for(s, inv);
+                       if (!p.feasible()) {
+                           throw CommandError(p.reason);
+                       }
+                       // Fly exactly the previewed course: cap dv at the plan's figure.
+                       const DepartResult r = depart(*s.content, w, player_ship(w), p.destination,
+                                                     {p.accel_g, p.delta_v_km_s * (1.0 + 1e-9)});
+                       if (r.status != CourseStatus::ok) {
+                           throw CommandError(r.reason);
+                       }
+                       flush_messages(s, out);
+                       out << std::format("Underway. ETA {} ({}). 'wait' to fly.\n",
+                                          calendar::format_datetime(r.preview.arrival),
+                                          sim::format_duration(r.preview.duration));
+                   });
+
+    // --- money ---
+
+    bus.add_query({.name = "books",
+                   .summary = "Income and expenses over recent days",
+                   .options = {{.name = "days", .type = sim::ArgType::integer, .help = "period",
+                                .default_value = "30"},
+                               {.name = "entries", .type = sim::ArgType::integer,
+                                .help = "recent ledger lines to show", .default_value = "10"}}},
+                  [](const Session& s, const Invocation& inv, std::ostream& out) {
+                      const World& w = require_world(s);
+                      const sim::Time to = w.now() + sim::seconds(1);
+                      const sim::Time from = to - sim::days(std::max<std::int64_t>(1, inv.get<std::int64_t>("days")));
+                      const LedgerSummary sum = summarize_ledger(w, w.player, from, to);
+                      out << std::format("Books since {}: opening {}, closing {}\n",
+                                         calendar::format_date(from), format_credits(sum.opening_balance),
+                                         format_credits(sum.closing_balance));
+                      for (const auto& [name, cat] : enum_names(LedgerCategory{})) {
+                          if (sum.income_of(cat) != 0 || sum.expense_of(cat) != 0) {
+                              out << std::format("  {:<10} +{:>12}  -{:>12}\n", name,
+                                                 format_credits(sum.income_of(cat)),
+                                                 format_credits(sum.expense_of(cat)));
+                          }
+                      }
+                      out << std::format("  net {}\n", format_credits(sum.net()));
+                      std::vector<const LedgerEntry*> mine;
+                      for (const LedgerEntry& e : ledger_between(w, from, to)) {
+                          if (e.company == w.player) {
+                              mine.push_back(&e);
+                          }
+                      }
+                      const auto n = static_cast<std::size_t>(std::max<std::int64_t>(0, inv.get<std::int64_t>("entries")));
+                      for (std::size_t i = mine.size() > n ? mine.size() - n : 0; i < mine.size(); ++i) {
+                          const LedgerEntry& e = *mine[i];
+                          out << std::format("  {}  {:>12}  {:<8} {}\n", calendar::format_date(e.time),
+                                             format_credits(e.amount), to_string(e.category), e.description);
+                      }
+                      const Credits tabs = total_dock_tabs(w, w.player);
+                      if (tabs > 0) {
+                          out << std::format("  owed to dockmasters: {}\n", format_credits(tabs));
+                      }
+                  });
+
+    bus.add_action({.name = "pay",
+                    .summary = "Pay toward your loan now (counts toward the next instalment)",
+                    .positionals = {{.name = "amount", .type = sim::ArgType::integer, .help = "credits"}}},
+                   [](Session& s, const Invocation& inv, std::ostream& out) {
+                       World& w = require_playing(s);
+                       for (auto [id, loan] : w.loans) {
+                           if (loan.borrower == w.player) {
+                               const PaymentResult r = pay_loan(*s.content, w, id, inv.get<std::int64_t>("amount"));
+                               if (!r.ok) {
+                                   throw CommandError(r.message);
+                               }
+                               flush_messages(s, out);
+                               out << r.message << "\n";
+                               return;
+                           }
+                       }
+                       throw CommandError("you have no loans");
+                   });
+
+    bus.add_action({.name = "paytab", .summary = "Settle what you owe the dockmaster here"},
+                   [](Session& s, const Invocation&, std::ostream& out) {
+                       World& w = require_playing(s);
+                       const Ship& ship = w.ships.at(player_ship(w));
+                       const auto* docked = std::get_if<Docked>(&ship.location);
+                       if (docked == nullptr) {
+                           throw CommandError("you're not docked");
+                       }
+                       const Credits paid = pay_dock_tab(*s.content, w, w.player, docked->station);
+                       flush_messages(s, out);
+                       out << std::format("paid {}; still owed here: {}\n", format_credits(paid),
+                                          format_credits(dock_tab(w, w.player, docked->station)));
+                   });
 }
 
 } // namespace expanse
