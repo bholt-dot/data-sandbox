@@ -25,6 +25,8 @@ sudo pacman -S sdl3 glslang vulkan-icd-loader   # Arch; plus your Vulkan driver 
                                                 # vulkan-intel, nvidia-utils) or vulkan-swrast
 cmake --preset viewer && cmake --build --preset viewer -j && ctest --preset viewer
 ./build/viewer/apps/viewer/belter-view                     # drag, wheel, R, Esc
+cmake --preset viewer-release && cmake --build --preset viewer-release -j   # for playing
+./build/viewer-release/apps/belter --view                  # shell + window
 SDL_VIDEO_DRIVER=offscreen ./build/viewer/apps/viewer/belter-view --screenshot out.png  # headless
 ```
 

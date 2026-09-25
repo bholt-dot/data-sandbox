@@ -26,16 +26,63 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
+    },
+    {
+      "name": "viewer-release",
+      "displayName": "Optimized + SDL3 GPU viewer (for playing)",
+      "inherits": "release",
+      "binaryDir": "${sourceDir}/build/viewer-release",
+      "cacheVariables": {
+        "SIM_VIEWER": "ON"
+      }
     }
   ],
   "buildPresets": [
-    { "name": "dev", "configurePreset": "dev" },
-    { "name": "viewer", "configurePreset": "viewer" },
-    { "name": "release", "configurePreset": "release" }
+    {
+      "name": "dev",
+      "configurePreset": "dev"
+    },
+    {
+      "name": "viewer",
+      "configurePreset": "viewer"
+    },
+    {
+      "name": "release",
+      "configurePreset": "release"
+    },
+    {
+      "name": "viewer-release",
+      "configurePreset": "viewer-release"
+    }
   ],
   "testPresets": [
-    { "name": "dev", "configurePreset": "dev", "output": { "outputOnFailure": true } },
-    { "name": "viewer", "configurePreset": "viewer", "output": { "outputOnFailure": true } },
-    { "name": "release", "configurePreset": "release", "output": { "outputOnFailure": true } }
+    {
+      "name": "dev",
+      "configurePreset": "dev",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "viewer",
+      "configurePreset": "viewer",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "release",
+      "configurePreset": "release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "viewer-release",
+      "configurePreset": "viewer-release",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
   ]
 }
