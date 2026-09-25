@@ -11,4 +11,5 @@ sim_add_test(simcore_tests
     tests/time_tests.cpp
     tests/table_tests.cpp
     tests/rng_tests.cpp
+    tests/scheduler_tests.cpp
   LIBS sim::core)
