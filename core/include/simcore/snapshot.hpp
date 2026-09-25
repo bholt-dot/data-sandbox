@@ -22,6 +22,7 @@
 #include "simcore/hash.hpp"
 #include "simcore/scheduler.hpp"
 #include "simcore/serialize.hpp"
+#include "simcore/stats.hpp"
 #include "simcore/table.hpp"
 
 namespace sim {
@@ -80,6 +81,25 @@ struct Codec<Scheduler<Payload>> {
         auto st = decode_as<SchedulerState<Payload>>(r);
         try {
             s.restore(std::move(st));
+        } catch (const std::invalid_argument& e) {
+            r.fail(e.what());
+        }
+    }
+};
+
+// StatPipeline: only its authoritative state (see StatPipelineState); derived indexes are rebuilt
+// by restore() on load.
+template <>
+struct Codec<StatPipeline> {
+    template <ByteSink Sink>
+    static void encode(Sink& sink, const StatPipeline& p) {
+        sim::encode(sink, p.snapshot());
+    }
+
+    static void decode(Reader& r, StatPipeline& p) {
+        auto st = decode_as<StatPipelineState>(r);
+        try {
+            p.restore(std::move(st));
         } catch (const std::invalid_argument& e) {
             r.fail(e.what());
         }

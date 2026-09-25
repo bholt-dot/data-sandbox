@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
+#include <string>
 #include <tuple>
 
 namespace sim {
@@ -194,6 +195,88 @@ void StatPipeline::forget_target(EntityKey target) {
     // gone a stale cache could look valid, so drop the cache wholesale.
     cache_.clear();
     ++epoch_;
+}
+
+StatPipelineState StatPipeline::snapshot() const {
+    StatPipelineState st;
+    st.modifiers = modifiers_;
+    for (const auto& [key, b] : buckets_) {
+        if (b.base) {
+            st.bases.emplace_hint(st.bases.end(), key, *b.base);
+        }
+    }
+    for (const auto& [target, list] : scopes_) {
+        if (!list.scopes.empty()) {
+            st.scopes.emplace_hint(st.scopes.end(), target, list.scopes);
+        }
+    }
+    return st;
+}
+
+void StatPipeline::restore(StatPipelineState st) {
+    auto invalid = [](const char* what) {
+        throw std::invalid_argument(std::string("sim::StatPipeline::restore: ") + what);
+    };
+    // Exactly the values canonical() lets in, so restored data sorts and hashes like live data.
+    auto is_canonical = [](double v) { return std::isfinite(v) && !(v == 0.0 && std::signbit(v)); };
+    for (const Modifier& m : st.modifiers.rows()) {
+        if (!is_canonical(m.value)) {
+            invalid("modifier value is not finite or is -0.0");
+        }
+        if (static_cast<std::uint8_t>(m.op) > static_cast<std::uint8_t>(ModOp::cap)) {
+            invalid("unknown modifier op");
+        }
+    }
+    for (const auto& [key, v] : st.bases) {
+        if (!is_canonical(v)) {
+            invalid("base value is not finite or is -0.0");
+        }
+    }
+    for (const auto& [target, list] : st.scopes) {
+        if (list.empty()) {
+            invalid("empty scope list");
+        }
+        for (std::size_t i = 0; i < list.size(); ++i) {
+            if (list[i] == global_scope || list[i] == target) {
+                invalid("scope list contains the global scope or its own target");
+            }
+            if (i > 0 && !(list[i - 1] < list[i])) {
+                invalid("scope list not strictly ascending");
+            }
+        }
+    }
+
+    // Built aside and moved in, so a failure (e.g. bad_alloc) leaves *this unchanged.
+    StatPipeline fresh;
+    fresh.modifiers_ = std::move(st.modifiers);
+    fresh.epoch_ = 1;
+    for (auto& [key, v] : st.bases) {
+        fresh.buckets_.emplace_hint(fresh.buckets_.end(), key, Bucket{v, {}, fresh.epoch_});
+    }
+    for (auto& [target, list] : st.scopes) {
+        fresh.scopes_.emplace_hint(fresh.scopes_.end(), target,
+                                   ScopeList{std::move(list), fresh.epoch_});
+    }
+    fresh.rebuild_indices();
+    *this = std::move(fresh);
+}
+
+void StatPipeline::rebuild_indices() {
+    for (auto& [key, b] : buckets_) {
+        b.mods.clear();
+    }
+    by_source_.clear();
+    by_expiry_.clear();
+    cache_.clear();
+    for (auto [id, m] : modifiers_) {
+        Bucket& b = buckets_[{m.target, m.stat}];
+        b.mods.push_back(id);
+        b.changed = std::max(b.changed, epoch_);
+        by_source_.emplace(m.source, id);
+        if (m.expires != never) {
+            by_expiry_.emplace(m.expires, id);
+        }
+    }
 }
 
 std::uint64_t StatPipeline::last_change(EntityKey target, StatId stat) const {

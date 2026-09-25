@@ -45,8 +45,21 @@
 // for any now >= T, in (expires, handle) order. get() does not look at the clock, so callers
 // either drive expire_until() from a periodic system or schedule an event at next_expiry().
 //
-// Persistent state is the modifier table plus bases and scope lists; the per-bucket modifier
-// lists, source and expiry indexes and the cache are derived from them.
+// Snapshots: the authoritative state is the modifier table (including its handle allocation
+// state, so ids allocated after a load match an uninterrupted run), the bases and the scope
+// lists; snapshot() captures exactly that, and restore() validates it and rebuilds everything
+// else (per-bucket modifier lists, source and expiry indexes, change epochs; the cache starts
+// empty). Nothing derived is saved, so it cannot drift from the data it was computed from.
+// Derived order may differ after a load (a bucket's modifier list follows the table's dense
+// order rather than insertion/removal history), which is unobservable: totals are sorted sums,
+// breakdowns are sorted, and removal/expiry walk ordered indexes.
+//
+// The state hash (hash_state, via Codec<StatPipeline> in snapshot.hpp) covers the exact
+// authoritative state, not just the logical modifier multiset: two pipelines with the same
+// modifiers built through different histories can hash differently (different handles, dense
+// order or free list), just as Table hashes do. That matches the project rule "same seed + same
+// commands => same hash" and catches divergence in handle allocation, which would change future
+// ModifierIds. Bases and scope lists are encoded canonically (sorted; empty scope lists omitted).
 
 #include <compare>
 #include <cstddef>
@@ -56,6 +69,7 @@
 #include <optional>
 #include <set>
 #include <span>
+#include <tuple>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -69,6 +83,7 @@ namespace sim {
 struct StatId {
     std::uint32_t value = 0;
     constexpr auto operator<=>(const StatId&) const = default;
+    static constexpr auto fields(auto& self) { return std::tie(self.value); }
 };
 
 // Identifies a modifier target, scope or source. `kind` namespaces different tables (handles of
@@ -78,6 +93,9 @@ struct EntityKey {
     std::uint32_t index = 0;
     std::uint32_t generation = 0;
     constexpr auto operator<=>(const EntityKey&) const = default;
+    static constexpr auto fields(auto& self) {
+        return std::tie(self.kind, self.index, self.generation);
+    }
 };
 
 inline constexpr EntityKey global_scope{};
@@ -100,11 +118,31 @@ struct Modifier {
     Time expires = never;
 
     bool operator==(const Modifier&) const = default;
+    static auto fields(auto& self) {
+        return std::tie(self.source, self.target, self.stat, self.op, self.value, self.expires);
+    }
 };
 
 struct ModifierTag;
 using ModifierId = Handle<ModifierTag>;
 using ModifierTable = Table<ModifierTag, Modifier>;
+
+// One (target, stat) pair.
+struct StatKey {
+    EntityKey target;
+    StatId stat;
+    constexpr auto operator<=>(const StatKey&) const = default;
+    static constexpr auto fields(auto& self) { return std::tie(self.target, self.stat); }
+};
+
+// Authoritative StatPipeline state, as captured by snapshot() and consumed by restore().
+struct StatPipelineState {
+    ModifierTable modifiers;
+    std::map<StatKey, double> bases;                      // includes global defaults
+    std::map<EntityKey, std::vector<EntityKey>> scopes;   // non-empty lists as set_scopes stores them
+
+    static auto fields(auto& self) { return std::tie(self.modifiers, self.bases, self.scopes); }
+};
 
 struct StatContribution {
     ModifierId id;
@@ -158,16 +196,20 @@ public:
     const Modifier* find(ModifierId id) const { return modifiers_.get(id); }
     const ModifierTable& modifiers() const { return modifiers_; }
 
+    StatPipelineState snapshot() const;
+    // Replaces all state with `st` and rebuilds the derived indexes; the cache starts empty and
+    // recompute_count() restarts at 0.
+    // Throws std::invalid_argument if `st` is inconsistent (the pipeline is then unchanged):
+    // non-finite or -0.0 values, unknown ops, or scope lists that are empty, unsorted, contain
+    // duplicates, the global scope or the target itself.
+    void restore(StatPipelineState st);
+
     void invalidate_cache() { cache_.clear(); }
     // Diagnostics: number of cache misses that recomputed a total.
     std::uint64_t recompute_count() const { return recomputes_; }
 
 private:
-    struct BucketKey {
-        EntityKey target;
-        StatId stat;
-        constexpr auto operator<=>(const BucketKey&) const = default;
-    };
+    using BucketKey = StatKey;
     struct BucketKeyHash {
         std::size_t operator()(const BucketKey& k) const noexcept;
     };
@@ -187,6 +229,7 @@ private:
 
     Bucket& touch(BucketKey key);
     const Bucket* bucket(BucketKey key) const;
+    void rebuild_indices();
     void erase_indexed(ModifierId id, const Modifier& m);
     std::uint64_t last_change(EntityKey target, StatId stat) const;
     double compute(EntityKey target, StatId stat, StatBreakdown* out) const;
