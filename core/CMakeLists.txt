@@ -9,4 +9,5 @@ sim_add_test(simcore_tests
   SOURCES
     tests/main.cpp
     tests/time_tests.cpp
+    tests/scheduler_tests.cpp
   LIBS sim::core)
