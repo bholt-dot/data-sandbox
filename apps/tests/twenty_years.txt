@@ -1,0 +1,6 @@
+# Determinism check: 20 simulated years from a fixed seed. Run twice; hashes must match.
+new secondhand --seed 7
+advance 3650d --force
+hash
+advance 3650d --force
+hash

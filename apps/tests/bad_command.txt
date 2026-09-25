@@ -1,0 +1,2 @@
+new secondhand --seed 1
+advnce 3d

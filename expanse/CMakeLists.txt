@@ -11,6 +11,7 @@ add_library(expanse
   src/finance.cpp
   src/crew.cpp
   src/ships.cpp
+  src/shell.cpp
 )
 add_library(sim::expanse ALIAS expanse)
 target_include_directories(expanse PUBLIC include)
