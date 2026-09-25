@@ -22,3 +22,7 @@ if(SIM_BUILD_TESTS)
            COMMAND belter --script ${CMAKE_CURRENT_SOURCE_DIR}/tests/bad_command.txt)
   set_tests_properties(belter_script_error_exits_nonzero PROPERTIES WILL_FAIL TRUE)
 endif()
+
+if(SIM_VIEWER)
+  add_subdirectory(viewer)  # belter_viewer library + belter-view
+endif()

@@ -11,6 +11,15 @@
       }
     },
     {
+      "name": "viewer",
+      "displayName": "Debug + sanitizers + SDL3 GPU viewer",
+      "inherits": "dev",
+      "binaryDir": "${sourceDir}/build/viewer",
+      "cacheVariables": {
+        "SIM_VIEWER": "ON"
+      }
+    },
+    {
       "name": "release",
       "displayName": "Optimized",
       "binaryDir": "${sourceDir}/build/release",
@@ -21,10 +30,12 @@
   ],
   "buildPresets": [
     { "name": "dev", "configurePreset": "dev" },
+    { "name": "viewer", "configurePreset": "viewer" },
     { "name": "release", "configurePreset": "release" }
   ],
   "testPresets": [
     { "name": "dev", "configurePreset": "dev", "output": { "outputOnFailure": true } },
+    { "name": "viewer", "configurePreset": "viewer", "output": { "outputOnFailure": true } },
     { "name": "release", "configurePreset": "release", "output": { "outputOnFailure": true } }
   ]
 }

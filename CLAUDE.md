@@ -14,12 +14,30 @@ cmake --preset release && cmake --build --preset release -j                  # O
 Toolchain floor: GCC 13 / Clang 18, C++20. `<print>` and other C++23 library features are
 not available on GCC 13 — use `<format>` + streams.
 
+### Viewer (optional, `SIM_VIEWER=ON`)
+
+The SDL3 GPU system viewer (`apps/viewer`, `belter-view`) is off by default; headless builds
+need neither SDL3 nor glslang. Vulkan only, shaders are GLSL 450 compiled to SPIR-V at build time
+and embedded (`cmake/Shaders.cmake`).
+
+```bash
+sudo pacman -S sdl3 glslang vulkan-icd-loader   # Arch; plus your Vulkan driver (vulkan-radeon,
+                                                # vulkan-intel, nvidia-utils) or vulkan-swrast
+cmake --preset viewer && cmake --build --preset viewer -j && ctest --preset viewer
+./build/viewer/apps/viewer/belter-view                     # drag, wheel, R, Esc
+SDL_VIDEO_DRIVER=offscreen ./build/viewer/apps/viewer/belter-view --screenshot out.png  # headless
+```
+
+Without a system SDL3 >= 3.4 the build fetches and statically builds a pinned SDL. Shader
+bindings follow SDL's SPIR-V layout: vertex set 0 = textures/storage, set 1 = uniforms;
+fragment set 2 / set 3 (see `apps/viewer/shaders/frame.glsl`).
+
 ## Layout & layering
 
 - `core/` → library `sim::core`, namespace `sim`. Reusable across sim projects.
   **Must never include anything from `expanse/`.**
 - `expanse/` → library `sim::expanse`, namespace `expanse`. Game rules and data.
-- `apps/` → executables (`belter`).
+- `apps/` → executables (`belter`; `belter-view` + the `belter_viewer` library when `SIM_VIEWER=ON`).
 - `data/` → TOML definitions (bodies, stations, commodities, ship classes).
 - Tests live next to the code they test (`core/tests`, `expanse/tests`), doctest, registered via
   `sim_add_test()`. Test-case names must not contain `,` `[` `]` `*` or `\` — they break
