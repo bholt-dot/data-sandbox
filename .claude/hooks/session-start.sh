@@ -16,6 +16,15 @@ if ! command -v beans >/dev/null 2>&1 && [ "${CLAUDE_CODE_REMOTE:-}" = "true" ];
   fi
 fi
 
+# Viewer toolchain for headless rendering tests: software Vulkan (lavapipe), GLSL->SPIR-V
+# compiler, and SDL3's X11/Wayland build dependencies.
+if [ "${CLAUDE_CODE_REMOTE:-}" = "true" ] && command -v apt-get >/dev/null 2>&1 \
+   && { [ ! -f /usr/share/vulkan/icd.d/lvp_icd.json ] || ! command -v glslangValidator >/dev/null 2>&1; }; then
+  { apt-get update -q && apt-get install -y -q mesa-vulkan-drivers glslang-tools libxext-dev \
+      libxrandr-dev libxcursor-dev libxi-dev libxss-dev libxkbcommon-dev libwayland-dev \
+      libdecor-0-dev libxtst-dev; } >&2 || echo "session-start: viewer toolchain install failed" >&2
+fi
+
 # Persist PATH for the rest of the session's Bash calls.
 if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
   echo "export PATH=\"\$PATH:$GOBIN_DIR\"" >> "$CLAUDE_ENV_FILE"
