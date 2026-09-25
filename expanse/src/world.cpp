@@ -56,6 +56,13 @@ World load_world(std::span<const std::uint8_t> bytes, const Content& content) {
     if (w.stations.size() != content.table<StationDef>().size()) {
         throw sim::SerializeError("save does not match the loaded station definitions");
     }
+    const std::size_t commodities = content.table<CommodityDef>().size();
+    for (const StationState& st : w.stations) {
+        if (st.stock.size() != commodities || st.unmet.size() != commodities ||
+            st.disrupted_days.size() != commodities) {
+            throw sim::SerializeError("save does not match the loaded commodity definitions");
+        }
+    }
     return w;
 }
 
