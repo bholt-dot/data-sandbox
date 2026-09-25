@@ -1,6 +1,7 @@
 #include "expanse/shell.hpp"
 
 #include "expanse/calendar.hpp"
+#include "expanse/contracts.hpp"
 #include "expanse/crew.hpp"
 #include "expanse/economy.hpp"
 #include "expanse/finance.hpp"
@@ -244,6 +245,27 @@ void crew_table(const World& w, const std::vector<CrewId>& ids, Doc& out) {
                std::format("{}", m.skill), money(m.wage_per_week), level(100.0 * m.morale, 40.0, 20.0),
                styled(Style::dim, m.background)});
     }
+}
+
+// Contracts are addressed by their table slot ("#7"), shown by `jobs` and `contracts`.
+ContractId contract_arg(const World& w, const Invocation& inv) {
+    const auto slot = inv.get<std::int64_t>("id");
+    for (auto [id, c] : w.contracts) {
+        (void)c;
+        if (static_cast<std::int64_t>(id.index) == slot) {
+            return id;
+        }
+    }
+    throw CommandError(std::format("no contract #{} (see 'jobs' or 'contracts')", slot));
+}
+
+std::string faction_label(Faction f) {
+    for (const auto& [name, value] : enum_names(Faction{})) {
+        if (value == f) {
+            return std::string(name);
+        }
+    }
+    return "?";
 }
 
 } // namespace
@@ -531,8 +553,15 @@ void register_game_commands(ShellBus& bus, std::shared_ptr<const Content> conten
                     cargo += lot.tonnes < 10.0 ? std::format(", {:.2f} t {}", lot.tonnes, what)
                                                : std::format(", {:.0f} t {}", lot.tonnes, what);
                 }
+                for (const Consignment& k : ship.consignments) {
+                    cargo += std::format(", {:.1f} t {} (contract #{})", k.tonnes,
+                                         c.table<CommodityDef>()[k.commodity].name, k.contract.index);
+                }
                 t.row({"", cargo});
-                t.row({"", std::format("crew {}/{}", crew::aboard(w, id).size(), cls.crew_berths)});
+                const std::uint32_t pax = contracts::passengers_aboard(w, id);
+                t.row({"", pax > 0 ? std::format("crew {}/{} (+{} passenger{})", crew::aboard(w, id).size(),
+                                                 cls.crew_berths, pax, pax == 1 ? "" : "s")
+                                   : std::format("crew {}/{}", crew::aboard(w, id).size(), cls.crew_berths)});
             }
         });
 
@@ -805,6 +834,119 @@ void register_game_commands(ShellBus& bus, std::shared_ptr<const Content> conten
                        const std::optional<double> t =
                            inv.has("tonnes") ? std::optional{inv.get<double>("tonnes")} : std::nullopt;
                        print_trade(s, economy::refuel(*s.content, w, player_ship(w), t), out);
+                   });
+
+    // --- contracts ---
+
+    bus.add_query(
+        {.name = "jobs",
+         .summary = "The job board at your dock: cargo hauls and passengers",
+         .details = "Rewards are paid on delivery, which happens automatically when you dock at the "
+                    "destination. Cargo jobs may ask a deposit, refunded on delivery. The deadline "
+                    "starts when you accept."},
+        [](const Session& s, const Invocation&, Doc& out) {
+            const World& w = require_world(s);
+            const Content& c = *s.content;
+            const StationId here = docked_station(w);
+            const ShipId ship = player_ship(w);
+            const StationDef& st = c.table<StationDef>()[here];
+            out.heading(std::format("Jobs at {} — your standing with {}: {}", st.name, faction_label(st.faction),
+                                    contracts::standing(w, w.player, st.faction)));
+            const auto board = contracts::board_at(w, here);
+            if (board.empty()) {
+                out << "  " << styled(Style::dim, "(no work posted today)") << "\n";
+                return;
+            }
+            sim::TextTable& t = out.table({{"id"}, {"job"}, {"reward", Align::right}, {"deposit", Align::right},
+                                           {"time", Align::right}, {"needs", Align::right}, {""}});
+            for (const ContractId id : board) {
+                const Contract& k = w.contracts.at(id);
+                const auto [reward, deposit] = contracts::terms_for(c, w, k, w.player);
+                const contracts::Check chk = contracts::can_accept(c, w, ship, id);
+                t.row({key(std::format("#{}", id.index)), contracts::describe(c, k), money(reward),
+                       deposit > 0 ? sim::Line(money(deposit)) : sim::Line(styled(Style::dim, "-")),
+                       format_trip(k.time_allowed),
+                       k.kind == ContractKind::cargo ? std::format("{:.1f} t", k.tonnes)
+                                                     : std::format("{} berth{}", k.passengers, k.passengers == 1 ? "" : "s"),
+                       chk.ok ? sim::Line(styled(Style::good, "ok")) : sim::Line(styled(Style::bad, chk.reason))});
+            }
+            out << "  " << styled(Style::dim, "'accept <id>' to take a job; time counts from acceptance.") << "\n";
+        });
+
+    bus.add_action({.name = "accept",
+                    .summary = "Take a job from the board at your dock",
+                    .positionals = {{.name = "id", .type = sim::ArgType::integer, .help = "#id from 'jobs'"}}},
+                   [](Session& s, const Invocation& inv, Doc& out) {
+                       World& w = require_playing(s);
+                       const contracts::Result r = contracts::accept(*s.content, w, player_ship(w), contract_arg(w, inv));
+                       if (!r.ok) {
+                           throw CommandError(r.message);
+                       }
+                       s.messages_seen = w.messages.size(); // the result repeats the journal line
+                       out << r.message << "\n";
+                       out << "cash now " << money(w.companies.at(w.player).cash) << "\n";
+                   });
+
+    bus.add_query(
+        {.name = "contracts", .summary = "Your contracts: where, by when, and whether you'll make it"},
+        [](const Session& s, const Invocation&, Doc& out) {
+            const World& w = require_world(s);
+            const Content& c = *s.content;
+            const auto held = contracts::held_by(w, w.player);
+            out.heading("Contracts held");
+            if (held.empty()) {
+                out << "  " << styled(Style::dim, "(none; see 'jobs' when docked)") << "\n";
+            } else {
+                sim::TextTable& t = out.table({{"id"}, {"job"}, {"reward", Align::right}, {"deposit", Align::right},
+                                               {"deadline"}, {"ETA"}, {""}});
+                for (const ContractId id : held) {
+                    const Contract& k = w.contracts.at(id);
+                    const Ship* ship = w.ships.get(k.ship);
+                    const Underway* u = ship != nullptr ? std::get_if<Underway>(&ship->location) : nullptr;
+                    sim::Line eta;
+                    sim::Line verdict;
+                    if (u != nullptr && u->destination == k.destination) {
+                        eta = calendar::format_datetime(u->arrival);
+                        if (u->arrival <= k.deadline) {
+                            verdict = styled(Style::good, std::format("on time, {} to spare", format_trip(k.deadline - u->arrival)));
+                        } else if (u->arrival <= k.deadline + contracts::grace(k)) {
+                            verdict = styled(Style::warning, std::format("late by {}: pay cut", format_trip(u->arrival - k.deadline)));
+                        } else {
+                            verdict = styled(Style::urgent, "too late: will fail");
+                        }
+                    } else {
+                        eta = styled(Style::dim, "not en route");
+                        const sim::Duration left = k.deadline - w.now();
+                        verdict = left > sim::Duration{}
+                                      ? styled(left < sim::days(1) ? Style::urgent : Style::plain,
+                                               std::format("{} left", format_trip(left)))
+                                      : styled(Style::urgent, std::format("overdue by {}", format_trip(w.now() - k.deadline)));
+                    }
+                    t.row({key(std::format("#{}", id.index)), contracts::describe(c, k), money(k.reward),
+                           k.deposit > 0 ? sim::Line(money(k.deposit)) : sim::Line(styled(Style::dim, "-")),
+                           calendar::format_datetime(k.deadline), std::move(eta), std::move(verdict)});
+                }
+            }
+            std::string standings;
+            for (const Standing& st : w.standings) {
+                if (st.company == w.player) {
+                    standings += std::format("{}{} {:+}", standings.empty() ? "" : ", ", faction_label(st.faction), st.value);
+                }
+            }
+            out << "  standing: " << (standings.empty() ? std::string("none yet") : standings) << "\n";
+        });
+
+    bus.add_action({.name = "abandon",
+                    .summary = "Give up a contract (deposit forfeit or a fee, and standing lost)",
+                    .positionals = {{.name = "id", .type = sim::ArgType::integer, .help = "#id from 'contracts'"}}},
+                   [](Session& s, const Invocation& inv, Doc& out) {
+                       World& w = require_playing(s);
+                       const contracts::Result r = contracts::abandon(*s.content, w, w.player, contract_arg(w, inv));
+                       if (!r.ok) {
+                           throw CommandError(r.message);
+                       }
+                       s.messages_seen = w.messages.size();
+                       out << r.message << "\n";
                    });
 
     // --- crew ---

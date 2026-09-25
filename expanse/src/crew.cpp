@@ -1,5 +1,6 @@
 #include "expanse/crew.hpp"
 
+#include "expanse/contracts.hpp"
 #include "expanse/finance.hpp"
 #include "expanse/simulation.hpp"
 #include "expanse/stat_ids.hpp"
@@ -456,7 +457,9 @@ Provisions daily_need(const Content& content, World& world, ShipId ship_id) {
     if (ship == nullptr) {
         return {};
     }
-    const auto people = static_cast<double>(aboard(world, ship_id).size());
+    // Passengers under contract eat and breathe like crew.
+    const auto people = static_cast<double>(aboard(world, ship_id).size() +
+                                            contracts::passengers_aboard(world, ship_id));
     if (people == 0.0) {
         return {};
     }
@@ -529,9 +532,10 @@ HireResult hire(const Content& content, World& world, ShipId ship_id, CrewId mem
                                 station_name(content, docked->station)));
     }
     const ShipClassDef& cls = content.table<ShipClassDef>()[ship->ship_class];
-    if (aboard(world, ship_id).size() >= cls.crew_berths) {
+    if (aboard(world, ship_id).size() + contracts::passengers_aboard(world, ship_id) >= cls.crew_berths) {
         return fail(HireStatus::no_berth,
-                    std::format("All {} berths on the {} are taken.", cls.crew_berths, ship->name));
+                    std::format("All {} berths on the {} are taken (passengers included).",
+                                cls.crew_berths, ship->name));
     }
     const Credits bonus = signing_bonus(*m);
     if (!pay(world, ship->owner, bonus, std::format("signing bonus: {}", m->name))) {

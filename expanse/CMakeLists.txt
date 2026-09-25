@@ -10,6 +10,7 @@ add_library(expanse
   src/economy.cpp
   src/finance.cpp
   src/crew.cpp
+  src/contracts.cpp
   src/ships.cpp
   src/shell.cpp
 )
@@ -28,6 +29,7 @@ sim_add_test(expanse_tests
     tests/ships_tests.cpp
     tests/shell_tests.cpp
     tests/crew_tests.cpp
+    tests/contracts_tests.cpp
     tests/economy_tests.cpp
     tests/dataset_tests.cpp
     tests/balance_tests.cpp
